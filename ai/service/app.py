@@ -239,15 +239,25 @@ def _load() -> None:
     else:
         horizons_info = {}
 
-    # Load calibrated linear regression model artifact
-    # Using LR_MODEL (linear_regression.joblib) ensures exact alignment with the published
-    # conformal prediction intervals and reported test metrics (zero model mismatch).
-    if LR_MODEL.exists():
-        model = joblib.load(LR_MODEL)
-    elif PRODUCTION_MODEL.exists():
-        model = joblib.load(PRODUCTION_MODEL)
-    else:
-        raise RuntimeError("No trained model found. Run ai/src/train.py first.")
+    # Require exact calibrated model artifact. Silent fallback to uncalibrated models
+    # while retaining calibrated conformal uncertainty intervals is strictly prohibited.
+    if not LR_MODEL.exists():
+        raise RuntimeError(
+            f"Calibrated model artifact '{LR_MODEL.name}' not found at {LR_MODEL}. "
+            "Silent fallback to an uncalibrated model while serving calibrated uncertainty intervals is strictly prohibited. "
+            "Run ai/src/train.py to generate the exact calibrated model artifact."
+        )
+
+    model = joblib.load(LR_MODEL)
+
+    # Verify that the loaded conformal calibration metadata explicitly matches the served model
+    if validation_band:
+        calibration_model_name = validation_band.get("calibration_model")
+        if calibration_model_name and calibration_model_name != "linear_regression":
+            raise RuntimeError(
+                f"Conformal calibration metadata mismatch: calibration_model is '{calibration_model_name}', "
+                f"expected 'linear_regression' matching {LR_MODEL.name}."
+            )
 
     # Precompute forecasts for all candidate stations
     all_forecasts.clear()

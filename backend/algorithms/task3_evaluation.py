@@ -144,11 +144,13 @@ def classify_depth_tier(current_level_m: Optional[float]) -> Dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 def classify_gec2015_assessment_unit(
-    stage_of_extraction_pct: Optional[float],
+    stage_of_extraction_pct: Optional[float] = None,
     pre_monsoon_trend_decline: Optional[bool] = None,
     post_monsoon_trend_decline: Optional[bool] = None,
     assessment_unit: Optional[str] = None,
     trend_years_count: Optional[int] = None,
+    pre_monsoon_years_count: Optional[int] = None,
+    post_monsoon_years_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Statutory CGWB GEC-2015 Assessment-Unit Categorization Matrix.
@@ -158,16 +160,17 @@ def classify_gec2015_assessment_unit(
 
     Requires:
       1. Valid administrative assessment unit name (e.g., taluk or block).
+         District fallback is strictly prohibited.
       2. Valid assessment-unit Stage of Groundwater Extraction (SOE):
          SOE = (Existing Gross Draft for All Uses / Annual Extractable Resource) * 100%
-      3. Statutory 10-year pre-monsoon and post-monsoon water level trend evidence.
+         A legitimate 0.0% extraction is valid; strictly negative values are rejected.
+      3. Statutory at least 10 years of actual pre-monsoon AND post-monsoon trend records
+         separately. Arbitrary annual readings do NOT qualify. A missing trend-year count
+         must return 'unassessed', never pass validation.
 
-    Where extraction data, assessment unit, or required 10-year trend evidence is
-    missing or insufficient, returns category='unassessed'.
-
-    Decision Rules (CGWB GEC-2015):
+    Decision Rules (CGWB GEC-2015 Methodology):
       1. SOE <= 70%:
-         - If both pre- and post-monsoon trends show significant decline: Semi-Critical
+         - If both pre- and post-monsoon trends show significant decline: Semi-Critical (reassessed)
          - Otherwise: Safe
       2. 70% < SOE <= 90%:
          - Semi-Critical
@@ -175,12 +178,12 @@ def classify_gec2015_assessment_unit(
          - If either pre- or post-monsoon trend shows significant decline: Critical
          - If neither trend shows decline: Semi-Critical
       4. SOE > 100%:
-         - Over-Exploited
+         - Over-Exploited (draft exceeds annual extractable recharge)
 
     Returns:
         Structured dict with category, label, SOE, trend flags, and statutory rationale.
     """
-    # Guard 1: Must be an administrative assessment unit, not an unmapped well
+    # Guard 1: Must be a valid administrative assessment unit, not an unmapped well or district
     if (
         assessment_unit is None
         or not str(assessment_unit).strip()
@@ -192,25 +195,28 @@ def classify_gec2015_assessment_unit(
             "stage_of_extraction_pct": None,
             "pre_monsoon_trend_decline": None,
             "post_monsoon_trend_decline": None,
+            "pre_monsoon_years_count": pre_monsoon_years_count,
+            "post_monsoon_years_count": post_monsoon_years_count,
             "assessment_unit": None,
             "framework": "CGWB GEC-2015 Methodology",
             "statutory_scope": "administrative_assessment_unit",
             "rationale": (
                 "Unassessed: Statutory GEC-2015 assessments apply exclusively to administrative assessment "
                 "units (taluks/blocks/watersheds). No valid administrative assessment unit was specified. "
-                "Individual monitoring wells cannot be classified as official blocks."
+                "Individual monitoring wells cannot be classified as official blocks, and district fallback is prohibited."
             ),
         }
 
     unit_name = str(assessment_unit).strip()
 
-    # Guard 2: Must have valid volumetric Stage of Groundwater Extraction (SOE)
+    # Guard 2: Must have valid volumetric Stage of Groundwater Extraction (SOE >= 0.0%)
+    # 0.0% is legitimate (e.g. unextracted wildlife sanctuary or zero draft watershed); strictly negative (<0) is invalid.
     if (
         stage_of_extraction_pct is None
         or not isinstance(stage_of_extraction_pct, (int, float))
         or np.isnan(stage_of_extraction_pct)
         or not np.isfinite(stage_of_extraction_pct)
-        or float(stage_of_extraction_pct) <= 0.0
+        or float(stage_of_extraction_pct) < 0.0
     ):
         return {
             "category": "unassessed",
@@ -218,11 +224,13 @@ def classify_gec2015_assessment_unit(
             "stage_of_extraction_pct": None,
             "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
             "post_monsoon_trend_decline": post_monsoon_trend_decline,
+            "pre_monsoon_years_count": pre_monsoon_years_count,
+            "post_monsoon_years_count": post_monsoon_years_count,
             "assessment_unit": unit_name,
             "framework": "CGWB GEC-2015 Methodology",
             "statutory_scope": "administrative_assessment_unit",
             "rationale": (
-                f"Unassessed for {unit_name}: Valid assessment-unit Stage of Groundwater Extraction (SOE) "
+                f"Unassessed for {unit_name}: Valid assessment-unit Stage of Groundwater Extraction (SOE >= 0.0%) "
                 "data is unavailable. GEC-2015 categorization requires volumetric gross draft and "
                 "annual extractable resource accounting."
             ),
@@ -230,69 +238,62 @@ def classify_gec2015_assessment_unit(
 
     soe = float(stage_of_extraction_pct)
 
-    # Guard 3: Required 10-year decadal trend evidence for statutory assessment
-    has_trend_evidence = (
-        pre_monsoon_trend_decline is not None
-        and post_monsoon_trend_decline is not None
-        and (trend_years_count is None or trend_years_count >= MIN_DECADAL_TREND_YEARS)
-    )
-
-    # For SOE > 100%, extraction exceeds recharge (Over-Exploited draft pressure)
-    if soe > GEC_CRITICAL_STAGE_MAX:
-        category = "over_exploited"
-        category_label = "Over-Exploited"
-        trend_note = (
-            f" (Verified with {trend_years_count} years of decadal trends)"
-            if trend_years_count and trend_years_count >= MIN_DECADAL_TREND_YEARS
-            else " (Note: Statutory 10-year trend series is incomplete or provisional)"
-        )
-        rationale = f"SOE exceeds 100% ({soe:.1f}%); groundwater draft exceeds annual extractable recharge.{trend_note}"
-        return {
-            "category": category,
-            "category_label": category_label,
-            "stage_of_extraction_pct": round(soe, 2),
-            "pre_monsoon_trend_decline": bool(pre_monsoon_trend_decline) if pre_monsoon_trend_decline is not None else None,
-            "post_monsoon_trend_decline": bool(post_monsoon_trend_decline) if post_monsoon_trend_decline is not None else None,
-            "assessment_unit": unit_name,
-            "trend_years_count": trend_years_count,
-            "framework": "CGWB GEC-2015 Methodology",
-            "statutory_scope": "administrative_assessment_unit",
-            "rationale": rationale,
-        }
-
-    # For SOE <= 100%, statutory categorization between Safe, Semi-Critical, and Critical
-    # strictly requires verified 10-year pre/post monsoon trend evidence.
-    if not has_trend_evidence:
+    # Guard 3: Required at least 10 years of actual pre-monsoon AND post-monsoon trend records separately.
+    # Arbitrary annual readings do NOT qualify. A missing trend-year count must return 'unassessed', never pass validation.
+    if (
+        pre_monsoon_years_count is None
+        or post_monsoon_years_count is None
+        or pre_monsoon_trend_decline is None
+        or post_monsoon_trend_decline is None
+        or pre_monsoon_years_count < MIN_DECADAL_TREND_YEARS
+        or post_monsoon_years_count < MIN_DECADAL_TREND_YEARS
+    ):
         return {
             "category": "unassessed",
             "category_label": "Unassessed",
             "stage_of_extraction_pct": round(soe, 2),
             "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
             "post_monsoon_trend_decline": post_monsoon_trend_decline,
+            "pre_monsoon_years_count": pre_monsoon_years_count,
+            "post_monsoon_years_count": post_monsoon_years_count,
             "assessment_unit": unit_name,
-            "trend_years_count": trend_years_count,
             "framework": "CGWB GEC-2015 Methodology",
             "statutory_scope": "administrative_assessment_unit",
             "rationale": (
-                f"Unassessed for {unit_name}: Insufficient statutory trend evidence. GEC-2015 categorization "
-                f"for SOE <= 100% strictly requires verified 10-year pre- and post-monsoon water level trend data. "
-                f"Available trend record: {trend_years_count or 0} years (minimum required: {MIN_DECADAL_TREND_YEARS} years)."
+                f"Unassessed for {unit_name}: Insufficient statutory seasonal trend evidence. GEC-2015 categorization "
+                f"strictly requires at least {MIN_DECADAL_TREND_YEARS} years of actual pre-monsoon AND post-monsoon "
+                f"trend records separately. Available records: "
+                f"pre-monsoon={pre_monsoon_years_count} years, post-monsoon={post_monsoon_years_count} years. "
+                "Arbitrary annual readings do not qualify as decadal seasonal evidence, and missing trend-year counts return unassessed."
             ),
         }
 
-    # Evaluate with verified 10-year trend evidence
     pre_dec = bool(pre_monsoon_trend_decline)
     post_dec = bool(post_monsoon_trend_decline)
 
-    if soe <= GEC_SAFE_STAGE_MAX:
+    # Statutory Categorization Rules with validated decadal trend evidence
+    if soe > GEC_CRITICAL_STAGE_MAX:
+        category = "over_exploited"
+        category_label = "Over-Exploited"
+        rationale = (
+            f"SOE exceeds 100% ({soe:.1f}%) in {unit_name}; groundwater draft exceeds annual extractable recharge. "
+            f"Validated with decadal trends (pre-monsoon {pre_monsoon_years_count} yrs, post-monsoon {post_monsoon_years_count} yrs)."
+        )
+    elif soe <= GEC_SAFE_STAGE_MAX:
         if pre_dec and post_dec:
             category = "semi_critical"
             category_label = "Semi-Critical"
-            rationale = f"SOE <= 70% ({soe:.1f}%) in {unit_name}, but significant decline observed in both pre- and post-monsoon 10-year trends."
+            rationale = (
+                f"SOE <= 70% ({soe:.1f}%) in {unit_name}, but significant decline observed in both "
+                f"pre-monsoon ({pre_monsoon_years_count} yrs) and post-monsoon ({post_monsoon_years_count} yrs) decadal trends (reassessed to Semi-Critical per GEC-2015)."
+            )
         else:
             category = "safe"
             category_label = "Safe"
-            rationale = f"SOE <= 70% ({soe:.1f}%) in {unit_name} with no significant dual decadal trend decline."
+            rationale = (
+                f"SOE <= 70% ({soe:.1f}%) in {unit_name} with no significant dual decadal trend decline "
+                f"(pre-monsoon {pre_monsoon_years_count} yrs, post-monsoon {post_monsoon_years_count} yrs)."
+            )
     elif soe <= GEC_SEMI_CRITICAL_STAGE_MAX:
         category = "semi_critical"
         category_label = "Semi-Critical"
@@ -301,11 +302,16 @@ def classify_gec2015_assessment_unit(
         if pre_dec or post_dec:
             category = "critical"
             category_label = "Critical"
-            rationale = f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} with significant decadal trend decline."
+            rationale = (
+                f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} with significant decadal trend decline "
+                f"(pre-decline={pre_dec}, post-decline={post_dec})."
+            )
         else:
             category = "semi_critical"
             category_label = "Semi-Critical"
-            rationale = f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} without significant decadal trend decline."
+            rationale = (
+                f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} without significant decadal trend decline."
+            )
 
     return {
         "category": category,
@@ -313,12 +319,132 @@ def classify_gec2015_assessment_unit(
         "stage_of_extraction_pct": round(soe, 2),
         "pre_monsoon_trend_decline": pre_dec,
         "post_monsoon_trend_decline": post_dec,
+        "pre_monsoon_years_count": pre_monsoon_years_count,
+        "post_monsoon_years_count": post_monsoon_years_count,
         "assessment_unit": unit_name,
-        "trend_years_count": trend_years_count,
         "framework": "CGWB GEC-2015 Methodology",
         "statutory_scope": "administrative_assessment_unit",
         "rationale": rationale,
     }
+
+
+def aggregate_block_seasonal_trends(
+    readings_df: pd.DataFrame,
+    stations_df: pd.DataFrame,
+    block_name: str,
+) -> Dict[str, Any]:
+    """
+    Aggregate station-level observations across an administrative assessment unit (block)
+    to compute block-wide pre-monsoon (Apr-May) and post-monsoon (Oct-Nov) decadal trends.
+
+    Statutory GEC-2015 requires block-level analysis over a representative monitoring network,
+    NEVER the extrapolation of an individual well's historical slope.
+    """
+    if (
+        readings_df is None
+        or readings_df.empty
+        or stations_df is None
+        or stations_df.empty
+        or not block_name
+        or not str(block_name).strip()
+    ):
+        return {
+            "assessment_unit": block_name,
+            "station_count": 0,
+            "pre_monsoon_years_count": 0,
+            "post_monsoon_years_count": 0,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+        }
+
+    target_block = str(block_name).strip()
+    matched_stations = stations_df[stations_df["block"].astype(str).str.strip().str.lower() == target_block.lower()]
+    if matched_stations.empty:
+        return {
+            "assessment_unit": target_block,
+            "station_count": 0,
+            "pre_monsoon_years_count": 0,
+            "post_monsoon_years_count": 0,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+        }
+
+    station_ids = set(matched_stations["station_id"].astype(str))
+    df = readings_df[readings_df["station_id"].astype(str).isin(station_ids)].copy()
+    if df.empty or "water_level_m" not in df.columns or "timestamp" not in df.columns:
+        return {
+            "assessment_unit": target_block,
+            "station_count": len(station_ids),
+            "pre_monsoon_years_count": 0,
+            "post_monsoon_years_count": 0,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+        }
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["year"] = df["timestamp"].dt.year
+    df["month"] = df["timestamp"].dt.month
+    df = df.dropna(subset=["water_level_m"])
+
+    # Pre-monsoon: Months 4 and 5 (April-May)
+    pre_df = df[df["month"].isin([4, 5])]
+    pre_yearly = pre_df.groupby("year")["water_level_m"].mean().sort_index() if not pre_df.empty else pd.Series(dtype=float)
+    pre_years = len(pre_yearly)
+    if pre_years >= MIN_DECADAL_TREND_YEARS:
+        pre_slope = np.polyfit(pre_yearly.index, pre_yearly.values, 1)[0]
+        pre_decline = bool(pre_slope > 0.05)  # deepening water table
+    else:
+        pre_decline = None
+
+    # Post-monsoon: Months 10 and 11 (October-November)
+    post_df = df[df["month"].isin([10, 11])]
+    post_yearly = post_df.groupby("year")["water_level_m"].mean().sort_index() if not post_df.empty else pd.Series(dtype=float)
+    post_years = len(post_yearly)
+    if post_years >= MIN_DECADAL_TREND_YEARS:
+        post_slope = np.polyfit(post_yearly.index, post_yearly.values, 1)[0]
+        post_decline = bool(post_slope > 0.05)
+    else:
+        post_decline = None
+
+    return {
+        "assessment_unit": target_block,
+        "station_count": len(station_ids),
+        "pre_monsoon_years_count": pre_years,
+        "post_monsoon_years_count": post_years,
+        "pre_monsoon_trend_decline": pre_decline,
+        "post_monsoon_trend_decline": post_decline,
+    }
+
+
+def evaluate_assessment_unit(
+    block_name: str,
+    stage_of_extraction_pct: Optional[float],
+    readings_df: Optional[pd.DataFrame] = None,
+    stations_df: Optional[pd.DataFrame] = None,
+    pre_monsoon_trend_decline: Optional[bool] = None,
+    post_monsoon_trend_decline: Optional[bool] = None,
+    pre_monsoon_years_count: Optional[int] = None,
+    post_monsoon_years_count: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Perform statutory GEC-2015 assessment at the administrative assessment-unit level (block/taluk).
+    Aggregates representative station observations across the unit if readings_df and stations_df are supplied.
+    """
+    if readings_df is not None and stations_df is not None:
+        agg = aggregate_block_seasonal_trends(readings_df, stations_df, block_name)
+        pre_monsoon_trend_decline = agg["pre_monsoon_trend_decline"]
+        post_monsoon_trend_decline = agg["post_monsoon_trend_decline"]
+        pre_monsoon_years_count = agg["pre_monsoon_years_count"]
+        post_monsoon_years_count = agg["post_monsoon_years_count"]
+
+    return classify_gec2015_assessment_unit(
+        stage_of_extraction_pct=stage_of_extraction_pct,
+        pre_monsoon_trend_decline=pre_monsoon_trend_decline,
+        post_monsoon_trend_decline=post_monsoon_trend_decline,
+        assessment_unit=block_name,
+        pre_monsoon_years_count=pre_monsoon_years_count,
+        post_monsoon_years_count=post_monsoon_years_count,
+    )
 
 
 def _classify_status(
@@ -665,9 +791,12 @@ def _compute_historical_trend(df: pd.DataFrame) -> Dict[str, Any]:
         "long_term_direction":        direction,
         "total_change_m":             round(total_change, 3),
         "years_of_data":              len(yearly),
-        "trend_years_count":          len(yearly),
+        "pre_monsoon_years_count":    pre_years,
+        "post_monsoon_years_count":   post_years,
         "pre_monsoon_trend_decline":  pre_decline,
         "post_monsoon_trend_decline": post_decline,
+        "is_point_level_well_trend":  True,
+        "note": "Point-level observation well trend. Cannot be substituted for administrative assessment-unit trend evidence.",
     }
 
 
@@ -783,13 +912,28 @@ def evaluate_station(
     historical_trend  = _compute_historical_trend(df)
 
     # 5. Statutory GEC-2015 assessment-unit categorization strictly at the administrative block level
-    assessment_unit_name = station_meta.get("block") or station_meta.get("district")
+    # Remove district fallback: assessment unit must be the administrative block/taluk
+    raw_block = station_meta.get("block")
+    assessment_unit_name = (
+        str(raw_block).strip()
+        if raw_block and str(raw_block).strip().lower() not in ("unknown", "none", "unassigned", "")
+        else None
+    )
+
+    # Never derive official block assessment from an individual station's historical trends.
+    # Official block trends must be provided from administrative assessment-unit records or block aggregation.
+    block_pre_dec = station_meta.get("block_pre_monsoon_trend_decline")
+    block_post_dec = station_meta.get("block_post_monsoon_trend_decline")
+    block_pre_yrs = station_meta.get("block_pre_monsoon_years")
+    block_post_yrs = station_meta.get("block_post_monsoon_years")
+
     gec_assessment    = classify_gec2015_assessment_unit(
         stage_of_extraction_pct=stage_of_dev,
-        pre_monsoon_trend_decline=historical_trend.get("pre_monsoon_trend_decline"),
-        post_monsoon_trend_decline=historical_trend.get("post_monsoon_trend_decline"),
+        pre_monsoon_trend_decline=block_pre_dec,
+        post_monsoon_trend_decline=block_post_dec,
         assessment_unit=assessment_unit_name,
-        trend_years_count=historical_trend.get("trend_years_count"),
+        pre_monsoon_years_count=block_pre_yrs,
+        post_monsoon_years_count=block_post_yrs,
     )
 
     # 6. Exploratory Resource Availability Index (heuristic)

@@ -27,6 +27,8 @@ from algorithms.task3_evaluation import (
     evaluate_station,
     classify_depth_tier,
     classify_gec2015_assessment_unit,
+    aggregate_block_seasonal_trends,
+    evaluate_assessment_unit,
     _compute_depletion_rate,
     _compute_years_to_depletion,
     SAFE_MAX,
@@ -134,72 +136,81 @@ def test_task3_depth_indicator_boundaries():
 def test_gec2015_boundary_conditions():
     """Verify statutory GEC-2015 category boundaries & decadal trend rules."""
     # Guard: Missing assessment unit name returns unassessed
-    res_no_unit = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit=None)
+    res_no_unit = classify_gec2015_assessment_unit(
+        70.0,
+        pre_monsoon_trend_decline=False,
+        post_monsoon_trend_decline=False,
+        assessment_unit=None,
+        pre_monsoon_years_count=10,
+        post_monsoon_years_count=10,
+    )
     assert res_no_unit["category"] == "unassessed"
     assert "administrative assessment unit" in res_no_unit["rationale"]
 
-    # Guard: Insufficient trend years (<10) for SOE <= 100% returns unassessed
-    res_short_trend = classify_gec2015_assessment_unit(
-        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=5
+    # Guard: Missing seasonal trend years count returns unassessed
+    res_missing_count = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=None, post_monsoon_years_count=10
     )
-    assert res_short_trend["category"] == "unassessed"
-    assert "Insufficient statutory trend evidence" in res_short_trend["rationale"]
+    assert res_missing_count["category"] == "unassessed"
+    assert "Insufficient statutory seasonal trend evidence" in res_missing_count["rationale"]
 
-    # Guard: Missing SOE (None or <= 0) returns unassessed
-    res_no_soe = classify_gec2015_assessment_unit(None, assessment_unit="Anekal", trend_years_count=10)
+    # Guard: Missing SOE (None or negative) returns unassessed
+    res_no_soe = classify_gec2015_assessment_unit(
+        None, assessment_unit="Anekal", pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, pre_monsoon_years_count=10, post_monsoon_years_count=10
+    )
     assert res_no_soe["category"] == "unassessed"
 
-    # SOE <= 70% with verified 10-year trends
+    # SOE <= 70% with verified 10-year pre/post decadal trends
     # No trend declines -> Safe
     res_safe = classify_gec2015_assessment_unit(
-        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_safe["category"] == "safe"
 
     # SOE <= 70% with single decline -> Still Safe under GEC-2015
     res_safe_one = classify_gec2015_assessment_unit(
-        70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+        70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_safe_one["category"] == "safe"
 
-    # SOE <= 70% with dual decline -> Semi-Critical
+    # SOE <= 70% with dual decline -> Semi-Critical (reassessed)
     res_semi_dual = classify_gec2015_assessment_unit(
-        70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True, assessment_unit="Anekal", trend_years_count=10
+        70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_semi_dual["category"] == "semi_critical"
 
     # 70% < SOE <= 90% -> Semi-Critical
     res_semi_71 = classify_gec2015_assessment_unit(
-        70.01, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+        70.01, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_semi_71["category"] == "semi_critical"
 
     res_semi_90 = classify_gec2015_assessment_unit(
-        90.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+        90.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_semi_90["category"] == "semi_critical"
 
     # 90% < SOE <= 100%
     # Without trend decline -> Semi-Critical
     res_90_notrend = classify_gec2015_assessment_unit(
-        95.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+        95.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_90_notrend["category"] == "semi_critical"
 
     # With trend decline -> Critical
     res_90_trend = classify_gec2015_assessment_unit(
-        95.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+        95.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_90_trend["category"] == "critical"
 
     # SOE > 100% -> Over-Exploited (draft exceeds extractable recharge)
     res_oe_100_1 = classify_gec2015_assessment_unit(
-        100.01, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+        100.01, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_oe_100_1["category"] == "over_exploited"
 
     res_oe_135 = classify_gec2015_assessment_unit(
-        135.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True, assessment_unit="Anekal", trend_years_count=10
+        135.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )
     assert res_oe_135["category"] == "over_exploited"
 
@@ -220,6 +231,10 @@ def test_conflicting_depth_and_gec_indicators():
         "district": "Bangalore Urban",
         "block": "Anekal",
         "well_depth_m": 40.0,
+        "block_pre_monsoon_trend_decline": True,
+        "block_post_monsoon_trend_decline": True,
+        "block_pre_monsoon_years": 12,
+        "block_post_monsoon_years": 12,
     }
     res_a = evaluate_station(shallow_readings, meta_a, stage_of_dev=115.0)
 
@@ -234,7 +249,6 @@ def test_conflicting_depth_and_gec_indicators():
     assert res_a["is_station_official_assessment"] is False
 
     # Scenario B: Deep well (27.5m, Over-Exploited Depth) in a Safe block (SOE = 52%)
-    # Provide seasonal pre-monsoon (May) and post-monsoon (Nov) readings across 12 years
     records_b = []
     for yr in range(12):
         records_b.append({"station_id": "STN_DEEP_SAFE", "timestamp": pd.Timestamp(f"{2010+yr}-05-15"), "water_level_m": 27.5})
@@ -245,6 +259,10 @@ def test_conflicting_depth_and_gec_indicators():
         "district": "Udupi",
         "block": "Karkala",
         "well_depth_m": 60.0,
+        "block_pre_monsoon_trend_decline": False,
+        "block_post_monsoon_trend_decline": False,
+        "block_pre_monsoon_years": 12,
+        "block_post_monsoon_years": 12,
     }
     res_b = evaluate_station(deep_readings, meta_b, stage_of_dev=52.0)
 
@@ -266,6 +284,144 @@ def test_conflicting_depth_and_gec_indicators():
     res_c = evaluate_station(unmapped_readings, meta_c, stage_of_dev=52.0)
     assert res_c["gec_assessment"]["category"] == "unassessed"
     assert res_c["depth_indicator"]["tier"] == "over_exploited"
+
+    # Scenario D: Station with block name but NO administrative assessment-unit trends returns unassessed
+    records_d = []
+    for yr in range(12):
+        records_d.append({"station_id": "STN_NO_BLOCK_TRENDS", "timestamp": pd.Timestamp(f"{2010+yr}-05-15"), "water_level_m": 4.5})
+    shallow_readings_d = pd.DataFrame(records_d)
+    meta_d = {
+        "station_id": "STN_NO_BLOCK_TRENDS",
+        "district": "Bangalore Urban",
+        "block": "Anekal",
+        "well_depth_m": 40.0,
+    }
+    res_d = evaluate_station(shallow_readings_d, meta_d, stage_of_dev=65.0)
+    # Individual well trends are NEVER used as official block trends
+    assert res_d["gec_assessment"]["category"] == "unassessed"
+    assert res_d["depth_indicator"]["tier"] == "safe"
+
+
+def test_station_versus_block_aggregation():
+    """
+    Verify that multiple stations in an administrative assessment unit are aggregated
+    across the block network and individual station trends do NOT override block classification.
+    """
+    # 3 stations in block "Anekal"
+    stations = pd.DataFrame([
+        {"station_id": "STN_A1", "block": "Anekal", "district": "Bangalore Urban"},
+        {"station_id": "STN_A2", "block": "Anekal", "district": "Bangalore Urban"},
+        {"station_id": "STN_A3", "block": "Anekal", "district": "Bangalore Urban"},
+        {"station_id": "STN_OTHER", "block": "Nelamangala", "district": "Bangalore Rural"},
+    ])
+
+    readings = []
+    for yr in range(12):
+        # A1: shallow (4m), recovering slope (-0.05m/yr)
+        readings.append({"station_id": "STN_A1", "timestamp": pd.Timestamp(f"{2010+yr}-05-10"), "water_level_m": 4.5 - yr * 0.05})
+        readings.append({"station_id": "STN_A1", "timestamp": pd.Timestamp(f"{2010+yr}-11-10"), "water_level_m": 3.5 - yr * 0.05})
+        # A2: moderate (12m), flat slope (0.00m/yr)
+        readings.append({"station_id": "STN_A2", "timestamp": pd.Timestamp(f"{2010+yr}-05-10"), "water_level_m": 12.0})
+        readings.append({"station_id": "STN_A2", "timestamp": pd.Timestamp(f"{2010+yr}-11-10"), "water_level_m": 11.0})
+        # A3: deep (22m), severe decline (+0.25m/yr)
+        readings.append({"station_id": "STN_A3", "timestamp": pd.Timestamp(f"{2010+yr}-05-10"), "water_level_m": 20.0 + yr * 0.25})
+        readings.append({"station_id": "STN_A3", "timestamp": pd.Timestamp(f"{2010+yr}-11-10"), "water_level_m": 18.0 + yr * 0.25})
+
+    readings_df = pd.DataFrame(readings)
+
+    # Aggregated block seasonal trends
+    agg = aggregate_block_seasonal_trends(readings_df, stations, "Anekal")
+    assert agg["assessment_unit"] == "Anekal"
+    assert agg["station_count"] == 3
+    assert agg["pre_monsoon_years_count"] == 12
+    assert agg["post_monsoon_years_count"] == 12
+    # Mean of slopes (-0.05 + 0.0 + 0.25)/3 = +0.0667 m/yr -> Net block decline
+    assert agg["pre_monsoon_trend_decline"] is True
+    assert agg["post_monsoon_trend_decline"] is True
+
+    # Assessment of block with SOE = 68% and dual decline -> Semi-Critical per GEC-2015
+    block_eval = evaluate_assessment_unit("Anekal", stage_of_extraction_pct=68.0, readings_df=readings_df, stations_df=stations)
+    assert block_eval["category"] == "semi_critical"
+    assert block_eval["assessment_unit"] == "Anekal"
+
+
+def test_missing_assessment_units_and_district_fallback_prohibited():
+    """Verify that missing assessment units return unassessed and district fallback is strictly prohibited."""
+    # Direct function calls with missing assessment unit
+    assert classify_gec2015_assessment_unit(70.0, assessment_unit=None)["category"] == "unassessed"
+    assert classify_gec2015_assessment_unit(70.0, assessment_unit="")["category"] == "unassessed"
+    assert classify_gec2015_assessment_unit(70.0, assessment_unit="   ")["category"] == "unassessed"
+    assert classify_gec2015_assessment_unit(70.0, assessment_unit="Unknown")["category"] == "unassessed"
+
+    # evaluate_station with district present but block missing must NOT fall back to district
+    readings = pd.DataFrame([
+        {"station_id": "STN_NO_BLOCK", "timestamp": pd.Timestamp(f"{2010+yr}-05-10"), "water_level_m": 10.0}
+        for yr in range(12)
+    ])
+    meta_no_block = {
+        "station_id": "STN_NO_BLOCK",
+        "district": "Bangalore Urban",
+        "block": None,  # Missing block
+    }
+    res = evaluate_station(readings, meta_no_block, stage_of_dev=65.0)
+    assert res["gec_assessment"]["assessment_unit"] is None
+    assert res["gec_assessment"]["category"] == "unassessed"
+    assert "No valid administrative assessment unit was specified" in res["gec_assessment"]["rationale"]
+
+
+def test_incomplete_seasonal_records_return_unassessed():
+    """Verify that missing or <10 years pre- or post-monsoon trend records return unassessed."""
+    # Missing pre-monsoon count
+    r1 = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=None, post_monsoon_years_count=10
+    )
+    assert r1["category"] == "unassessed"
+
+    # Missing post-monsoon count
+    r2 = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=None
+    )
+    assert r2["category"] == "unassessed"
+
+    # Incomplete pre-monsoon (<10 years)
+    r3 = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=9, post_monsoon_years_count=10
+    )
+    assert r3["category"] == "unassessed"
+
+    # Incomplete post-monsoon (<10 years)
+    r4 = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=8
+    )
+    assert r4["category"] == "unassessed"
+
+    # Arbitrary annual count without seasonal pre/post counts must NOT pass
+    r5 = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=20
+    )
+    assert r5["category"] == "unassessed"
+
+
+def test_zero_soe_validation():
+    """Verify that a legitimate 0.0% extraction is valid and evaluated as Safe, while negative SOE is rejected."""
+    # 0.0% extraction with verified decadal trends is valid -> Safe
+    res_zero = classify_gec2015_assessment_unit(
+        0.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
+    )
+    assert res_zero["category"] == "safe"
+    assert res_zero["stage_of_extraction_pct"] == 0.0
+
+    # 0.0% extraction with dual trend decline -> Semi-Critical
+    res_zero_dual = classify_gec2015_assessment_unit(
+        0.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
+    )
+    assert res_zero_dual["category"] == "semi_critical"
+
+    # Strictly negative SOE is invalid -> Unassessed
+    res_neg = classify_gec2015_assessment_unit(
+        -5.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
+    )
+    assert res_neg["category"] == "unassessed"
 
 
 def test_cadence_aware_depletion_rate_annual():

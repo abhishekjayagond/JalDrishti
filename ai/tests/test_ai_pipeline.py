@@ -231,3 +231,13 @@ def test_gwl_slope_4_calendar_gap_physics():
     assert pytest.approx(slope_calendar, abs=1e-4) == 0.200
     # The naive array position slope would erroneously distort to ~0.260 (+30% error!)
     assert abs(slope_naive_array - 0.200) > 0.05
+
+
+def test_missing_model_artifact_prohibits_silent_fallback(monkeypatch, tmp_path):
+    """Verify that if the calibrated model artifact is missing, app._load() raises RuntimeError rather than silently falling back."""
+    from service import app as ai_app
+    fake_model_path = tmp_path / "nonexistent_model.joblib"
+    monkeypatch.setattr("service.app.LR_MODEL", fake_model_path)
+    
+    with pytest.raises(RuntimeError, match="Silent fallback to an uncalibrated model"):
+        ai_app._load()
