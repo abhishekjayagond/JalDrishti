@@ -80,6 +80,14 @@ def get_active_alerts(
     stations_df = pd.DataFrame([_station_to_dict(s) for s in stations])
     results     = evaluate_all_stations(readings_df, stations_df)
     alerts      = [r for r in results if r.get("status") in ALERT_STATUSES]
+    for a in alerts:
+        a["alert_type"] = "exploratory_depth_screening_alert"
+        a["is_official_cgwb_classification"] = False
+        a["statutory_disclaimer"] = (
+            "Exploratory point-level depth screening alert based on local well water depth "
+            "(<8m Safe, 8–15m Semi-Critical, 15–25m Critical, >25m Over-Exploited). "
+            "Does not constitute an official statutory CGWB GEC-2015 administrative block assessment."
+        )
     alerts.sort(key=lambda x: (
         -{"over_exploited": 2, "critical": 1}.get(x.get("status",""), 0),
         -(x.get("current_level_m") or 0),

@@ -151,6 +151,9 @@ def classify_gec2015_assessment_unit(
     trend_years_count: Optional[int] = None,
     pre_monsoon_years_count: Optional[int] = None,
     post_monsoon_years_count: Optional[int] = None,
+    soe_source: Optional[str] = None,
+    assessment_year: Optional[int | str] = None,
+    require_authoritative_metadata: bool = False,
 ) -> Dict[str, Any]:
     """
     Statutory CGWB GEC-2015 Assessment-Unit Categorization Matrix.
@@ -164,6 +167,8 @@ def classify_gec2015_assessment_unit(
       2. Valid assessment-unit Stage of Groundwater Extraction (SOE):
          SOE = (Existing Gross Draft for All Uses / Annual Extractable Resource) * 100%
          A legitimate 0.0% extraction is valid; strictly negative values are rejected.
+         Authoritative source citation and assessment year required for official evaluations.
+         SOE CANNOT be derived from local well depth or water table levels.
       3. Statutory at least 10 years of actual pre-monsoon AND post-monsoon trend records
          separately. Arbitrary annual readings do NOT qualify. A missing trend-year count
          must return 'unassessed', never pass validation.
@@ -193,6 +198,8 @@ def classify_gec2015_assessment_unit(
             "category": "unassessed",
             "category_label": "Unassessed",
             "stage_of_extraction_pct": None,
+            "soe_source": str(soe_source).strip() if soe_source else None,
+            "assessment_year": assessment_year,
             "pre_monsoon_trend_decline": None,
             "post_monsoon_trend_decline": None,
             "pre_monsoon_years_count": pre_monsoon_years_count,
@@ -222,6 +229,8 @@ def classify_gec2015_assessment_unit(
             "category": "unassessed",
             "category_label": "Unassessed",
             "stage_of_extraction_pct": None,
+            "soe_source": str(soe_source).strip() if soe_source else None,
+            "assessment_year": assessment_year,
             "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
             "post_monsoon_trend_decline": post_monsoon_trend_decline,
             "pre_monsoon_years_count": pre_monsoon_years_count,
@@ -232,9 +241,50 @@ def classify_gec2015_assessment_unit(
             "rationale": (
                 f"Unassessed for {unit_name}: Valid assessment-unit Stage of Groundwater Extraction (SOE >= 0.0%) "
                 "data is unavailable. GEC-2015 categorization requires volumetric gross draft and "
-                "annual extractable resource accounting."
+                "annual extractable resource accounting from official CGWB Dynamic Ground Water Resource Assessments. "
+                "SOE cannot be derived from well depth or local water level trends."
             ),
         }
+
+    # Guard 2b: Strict authoritative source citation and assessment year check
+    if require_authoritative_metadata:
+        if not soe_source or not str(soe_source).strip():
+            return {
+                "category": "unassessed",
+                "category_label": "Unassessed",
+                "stage_of_extraction_pct": round(float(stage_of_extraction_pct), 2),
+                "soe_source": None,
+                "assessment_year": assessment_year,
+                "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
+                "post_monsoon_trend_decline": post_monsoon_trend_decline,
+                "pre_monsoon_years_count": pre_monsoon_years_count,
+                "post_monsoon_years_count": post_monsoon_years_count,
+                "assessment_unit": unit_name,
+                "framework": "CGWB GEC-2015 Methodology",
+                "statutory_scope": "administrative_assessment_unit",
+                "rationale": (
+                    f"Unassessed for {unit_name}: Authoritative SOE data source must be specified from official "
+                    "CGWB Dynamic Ground Water Resource Assessments. SOE cannot be derived from local well depth or water levels."
+                ),
+            }
+        if assessment_year is None or not str(assessment_year).strip():
+            return {
+                "category": "unassessed",
+                "category_label": "Unassessed",
+                "stage_of_extraction_pct": round(float(stage_of_extraction_pct), 2),
+                "soe_source": str(soe_source).strip(),
+                "assessment_year": None,
+                "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
+                "post_monsoon_trend_decline": post_monsoon_trend_decline,
+                "pre_monsoon_years_count": pre_monsoon_years_count,
+                "post_monsoon_years_count": post_monsoon_years_count,
+                "assessment_unit": unit_name,
+                "framework": "CGWB GEC-2015 Methodology",
+                "statutory_scope": "administrative_assessment_unit",
+                "rationale": (
+                    f"Unassessed for {unit_name}: Authoritative SOE assessment year must be specified (e.g., 2022, 2023)."
+                ),
+            }
 
     soe = float(stage_of_extraction_pct)
 
@@ -252,6 +302,8 @@ def classify_gec2015_assessment_unit(
             "category": "unassessed",
             "category_label": "Unassessed",
             "stage_of_extraction_pct": round(soe, 2),
+            "soe_source": str(soe_source).strip() if soe_source else None,
+            "assessment_year": assessment_year,
             "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
             "post_monsoon_trend_decline": post_monsoon_trend_decline,
             "pre_monsoon_years_count": pre_monsoon_years_count,
@@ -317,6 +369,8 @@ def classify_gec2015_assessment_unit(
         "category": category,
         "category_label": category_label,
         "stage_of_extraction_pct": round(soe, 2),
+        "soe_source": str(soe_source).strip() if soe_source else None,
+        "assessment_year": assessment_year,
         "pre_monsoon_trend_decline": pre_dec,
         "post_monsoon_trend_decline": post_dec,
         "pre_monsoon_years_count": pre_monsoon_years_count,
@@ -332,13 +386,26 @@ def aggregate_block_seasonal_trends(
     readings_df: pd.DataFrame,
     stations_df: pd.DataFrame,
     block_name: str,
+    min_stations_per_year: int = 1,
 ) -> Dict[str, Any]:
     """
     Aggregate station-level observations across an administrative assessment unit (block)
     to compute block-wide pre-monsoon (Apr-May) and post-monsoon (Oct-Nov) decadal trends.
 
-    Statutory GEC-2015 requires block-level analysis over a representative monitoring network,
-    NEVER the extrapolation of an individual well's historical slope.
+    METHODOLOGICAL REQUIREMENTS & DATA INTEGRITY:
+      1. Spatial Representation: All monitoring stations belonging to the exact administrative
+         block/taluk are identified. Individual well trends NEVER substitute for block trends.
+      2. Station-Year Normalization (Anti-Dominance Guard):
+         Seasonal water level averages are calculated per station per year first:
+             h_bar(s, y, season) = (1 / N_{s, y, season}) * sum_{k} h_{s, y, season, k}
+         Then aggregated into block-level seasonal values using Equal Station-Year Weighting:
+             H_bar_{block}(y, season) = (1 / |S_{y, season}|) * sum_{s in S_{y, season}} h_bar(s, y, season)
+         This guarantees that high-frequency telemetry stations (thousands of readings/season)
+         do NOT dominate the block average over manual CGWB monitoring wells.
+      3. Coverage Reporting & Decadal Verification:
+         Reports contributing station count, station identifiers, and total observations for
+         every year. Statutory GEC-2015 requires at least MIN_DECADAL_TREND_YEARS (10) separate
+         qualifying years for pre-monsoon AND 10 years for post-monsoon.
     """
     if (
         readings_df is None
@@ -351,10 +418,18 @@ def aggregate_block_seasonal_trends(
         return {
             "assessment_unit": block_name,
             "station_count": 0,
+            "station_ids": [],
+            "weighting_method": "equal_station_year_weighting",
             "pre_monsoon_years_count": 0,
             "post_monsoon_years_count": 0,
             "pre_monsoon_trend_decline": None,
             "post_monsoon_trend_decline": None,
+            "pre_monsoon_slope_m_per_year": None,
+            "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_annual_coverage": [],
+            "post_monsoon_annual_coverage": [],
+            "coverage_sufficient": False,
+            "coverage_rationale": f"Insufficient monitoring network: 0 stations located in block '{block_name}'.",
         }
 
     target_block = str(block_name).strip()
@@ -363,22 +438,38 @@ def aggregate_block_seasonal_trends(
         return {
             "assessment_unit": target_block,
             "station_count": 0,
+            "station_ids": [],
+            "weighting_method": "equal_station_year_weighting",
             "pre_monsoon_years_count": 0,
             "post_monsoon_years_count": 0,
             "pre_monsoon_trend_decline": None,
             "post_monsoon_trend_decline": None,
+            "pre_monsoon_slope_m_per_year": None,
+            "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_annual_coverage": [],
+            "post_monsoon_annual_coverage": [],
+            "coverage_sufficient": False,
+            "coverage_rationale": f"Insufficient monitoring network: 0 stations located in block '{target_block}'.",
         }
 
-    station_ids = set(matched_stations["station_id"].astype(str))
+    station_ids = sorted(list(set(matched_stations["station_id"].astype(str))))
     df = readings_df[readings_df["station_id"].astype(str).isin(station_ids)].copy()
     if df.empty or "water_level_m" not in df.columns or "timestamp" not in df.columns:
         return {
             "assessment_unit": target_block,
             "station_count": len(station_ids),
+            "station_ids": station_ids,
+            "weighting_method": "equal_station_year_weighting",
             "pre_monsoon_years_count": 0,
             "post_monsoon_years_count": 0,
             "pre_monsoon_trend_decline": None,
             "post_monsoon_trend_decline": None,
+            "pre_monsoon_slope_m_per_year": None,
+            "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_annual_coverage": [],
+            "post_monsoon_annual_coverage": [],
+            "coverage_sufficient": False,
+            "coverage_rationale": f"No valid water level readings found for {len(station_ids)} stations in block '{target_block}'.",
         }
 
     df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -386,33 +477,79 @@ def aggregate_block_seasonal_trends(
     df["month"] = df["timestamp"].dt.month
     df = df.dropna(subset=["water_level_m"])
 
+    def _process_season(season_months: list[int]) -> tuple[int, Optional[bool], Optional[float], list[dict]]:
+        season_df = df[df["month"].isin(season_months)]
+        if season_df.empty:
+            return 0, None, None, []
+
+        # Step 1: Calculate seasonal averages per station per year first
+        stn_yr = (
+            season_df.groupby(["year", "station_id"])["water_level_m"]
+            .agg(mean_level="mean", obs_count="count")
+            .reset_index()
+        )
+
+        annual_records = []
+        for y, group in stn_yr.groupby("year"):
+            contributing_stns = sorted(group["station_id"].astype(str).unique().tolist())
+            stn_count = len(contributing_stns)
+            total_obs = int(group["obs_count"].sum())
+            # Step 2: Equal station-year weighting (mean of station seasonal means)
+            block_seasonal_mean = float(group["mean_level"].mean())
+            is_rep = bool(stn_count >= min_stations_per_year)
+            annual_records.append({
+                "year": int(y),
+                "mean_water_level_mbgl": round(block_seasonal_mean, 3),
+                "contributing_stations_count": stn_count,
+                "contributing_station_ids": contributing_stns,
+                "total_readings_count": total_obs,
+                "is_representative": is_rep,
+                "weighting_method": "equal_station_year_weighting",
+            })
+
+        annual_records.sort(key=lambda r: r["year"])
+        rep_records = [r for r in annual_records if r["is_representative"]]
+        years_count = len(rep_records)
+
+        if years_count >= MIN_DECADAL_TREND_YEARS:
+            y_vals = np.array([r["year"] for r in rep_records], dtype=float)
+            lvl_vals = np.array([r["mean_water_level_mbgl"] for r in rep_records], dtype=float)
+            slope = float(np.polyfit(y_vals, lvl_vals, 1)[0])
+            trend_decline = bool(slope > 0.05)  # water table deepening > 5cm/yr
+        else:
+            slope = None
+            trend_decline = None
+
+        return years_count, trend_decline, slope, annual_records
+
     # Pre-monsoon: Months 4 and 5 (April-May)
-    pre_df = df[df["month"].isin([4, 5])]
-    pre_yearly = pre_df.groupby("year")["water_level_m"].mean().sort_index() if not pre_df.empty else pd.Series(dtype=float)
-    pre_years = len(pre_yearly)
-    if pre_years >= MIN_DECADAL_TREND_YEARS:
-        pre_slope = np.polyfit(pre_yearly.index, pre_yearly.values, 1)[0]
-        pre_decline = bool(pre_slope > 0.05)  # deepening water table
-    else:
-        pre_decline = None
+    pre_years, pre_decline, pre_slope, pre_coverage = _process_season([4, 5])
 
     # Post-monsoon: Months 10 and 11 (October-November)
-    post_df = df[df["month"].isin([10, 11])]
-    post_yearly = post_df.groupby("year")["water_level_m"].mean().sort_index() if not post_df.empty else pd.Series(dtype=float)
-    post_years = len(post_yearly)
-    if post_years >= MIN_DECADAL_TREND_YEARS:
-        post_slope = np.polyfit(post_yearly.index, post_yearly.values, 1)[0]
-        post_decline = bool(post_slope > 0.05)
-    else:
-        post_decline = None
+    post_years, post_decline, post_slope, post_coverage = _process_season([10, 11])
+
+    coverage_sufficient = bool(pre_years >= MIN_DECADAL_TREND_YEARS and post_years >= MIN_DECADAL_TREND_YEARS)
+    coverage_rationale = (
+        f"Decadal coverage: pre-monsoon={pre_years} years, post-monsoon={post_years} years "
+        f"(statutory threshold = {MIN_DECADAL_TREND_YEARS} years each)."
+    )
 
     return {
         "assessment_unit": target_block,
         "station_count": len(station_ids),
+        "station_ids": station_ids,
+        "weighting_method": "equal_station_year_weighting",
+        "weighting_rationale": "Station-year seasonal averaging prevents high-frequency telemetry from overwhelming low-frequency seasonal observation wells.",
         "pre_monsoon_years_count": pre_years,
         "post_monsoon_years_count": post_years,
         "pre_monsoon_trend_decline": pre_decline,
         "post_monsoon_trend_decline": post_decline,
+        "pre_monsoon_slope_m_per_year": round(pre_slope, 4) if pre_slope is not None else None,
+        "post_monsoon_slope_m_per_year": round(post_slope, 4) if post_slope is not None else None,
+        "pre_monsoon_annual_coverage": pre_coverage,
+        "post_monsoon_annual_coverage": post_coverage,
+        "coverage_sufficient": coverage_sufficient,
+        "coverage_rationale": coverage_rationale,
     }
 
 
@@ -425,26 +562,47 @@ def evaluate_assessment_unit(
     post_monsoon_trend_decline: Optional[bool] = None,
     pre_monsoon_years_count: Optional[int] = None,
     post_monsoon_years_count: Optional[int] = None,
+    soe_source: Optional[str] = None,
+    assessment_year: Optional[int | str] = None,
+    require_authoritative_metadata: bool = False,
+    min_stations_per_year: int = 1,
 ) -> Dict[str, Any]:
     """
     Perform statutory GEC-2015 assessment at the administrative assessment-unit level (block/taluk).
     Aggregates representative station observations across the unit if readings_df and stations_df are supplied.
     """
+    agg_details = None
     if readings_df is not None and stations_df is not None:
-        agg = aggregate_block_seasonal_trends(readings_df, stations_df, block_name)
+        agg = aggregate_block_seasonal_trends(readings_df, stations_df, block_name, min_stations_per_year=min_stations_per_year)
+        agg_details = agg
         pre_monsoon_trend_decline = agg["pre_monsoon_trend_decline"]
         post_monsoon_trend_decline = agg["post_monsoon_trend_decline"]
         pre_monsoon_years_count = agg["pre_monsoon_years_count"]
         post_monsoon_years_count = agg["post_monsoon_years_count"]
 
-    return classify_gec2015_assessment_unit(
+    res = classify_gec2015_assessment_unit(
         stage_of_extraction_pct=stage_of_extraction_pct,
         pre_monsoon_trend_decline=pre_monsoon_trend_decline,
         post_monsoon_trend_decline=post_monsoon_trend_decline,
         assessment_unit=block_name,
         pre_monsoon_years_count=pre_monsoon_years_count,
         post_monsoon_years_count=post_monsoon_years_count,
+        soe_source=soe_source,
+        assessment_year=assessment_year,
+        require_authoritative_metadata=require_authoritative_metadata,
     )
+
+    if agg_details:
+        res["aggregation_details"] = agg_details
+        res["weighting_method"] = agg_details.get("weighting_method")
+        res["pre_monsoon_annual_coverage"] = agg_details.get("pre_monsoon_annual_coverage", [])
+        res["post_monsoon_annual_coverage"] = agg_details.get("post_monsoon_annual_coverage", [])
+        res["pre_monsoon_slope_m_per_year"] = agg_details.get("pre_monsoon_slope_m_per_year")
+        res["post_monsoon_slope_m_per_year"] = agg_details.get("post_monsoon_slope_m_per_year")
+        res["station_count"] = agg_details.get("station_count", 0)
+        res["station_ids"] = agg_details.get("station_ids", [])
+
+    return res
 
 
 def _classify_status(
@@ -974,6 +1132,12 @@ def evaluate_station(
         "depth_indicator":            depth_indicator,
         "gec_assessment":             gec_assessment,
         "is_station_official_assessment": False,
+        "alert_type":                 "exploratory_depth_screening_alert" if alert_required else None,
+        "is_official_cgwb_classification": False,
+        "statutory_disclaimer": (
+            "Exploratory point-level depth screening alert based on local well water depth (<8m Safe, 8–15m Semi-Critical, "
+            "15–25m Critical, >25m Over-Exploited). Does not constitute an official statutory CGWB GEC-2015 administrative block assessment."
+        ),
         "statutory_note": (
             "This station is an individual observation well. GEC-2015 assessments apply to the entire "
             "administrative assessment unit (taluk/block), not to single observation points."
@@ -1137,6 +1301,9 @@ def _empty_result(station_id: str, reason: str) -> dict:
         "depth_indicator":             classify_depth_tier(None),
         "gec_assessment":              classify_gec2015_assessment_unit(None),
         "is_station_official_assessment": False,
+        "alert_type":                  None,
+        "is_official_cgwb_classification": False,
+        "statutory_disclaimer":        "Exploratory point-level depth screening indicator. Does not constitute an official statutory CGWB GEC-2015 administrative block assessment.",
         "statutory_note":              "This station is an individual observation well. GEC-2015 assessments apply to administrative units.",
         "stage_of_development_pct":    None,
         "annual_depletion_rate_m":     0.0,

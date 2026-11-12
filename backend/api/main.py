@@ -22,6 +22,10 @@ from app.services.alerts    import (
     get_station_evaluation, get_active_alerts,
     get_district_scorecard, get_state_scorecard,
 )
+from app.services.assessment_unit import (
+    evaluate_block_administrative_unit,
+    list_administrative_assessment_units,
+)
 
 log    = logging.getLogger("jaldrishti.api")
 router = APIRouter()
@@ -261,10 +265,90 @@ def task3_station(station_id: str, days: int=Query(365), stage_of_dev: Optional[
     return result
 
 
+# ── GEC-2015 Administrative Assessment Unit Endpoints ─────────────────────────
+@router.get("/gec/assessment-unit/{block_name}", tags=["GEC-2015 Assessment"])
+def get_gec_assessment_unit(
+    block_name: str,
+    stage_of_extraction_pct: Optional[float] = Query(None, ge=0.0, description="Stage of Groundwater Extraction (%) from authoritative CGWB assessment"),
+    soe_source: Optional[str] = Query(None, description="Authoritative source citation for SOE data"),
+    assessment_year: Optional[int] = Query(None, description="Assessment year of the SOE data"),
+    state: Optional[str] = Query(None, description="Filter stations by state"),
+    district: Optional[str] = Query(None, description="Filter stations by district"),
+    min_stations_per_year: int = Query(1, ge=1, description="Minimum stations required for a year to be representative"),
+    db: Session = Depends(get_db),
+):
+    """
+    Statutory GEC-2015 Administrative Assessment-Unit Evaluation Endpoint.
+
+    Evaluates an administrative assessment unit (taluk/block) using:
+      1. Authoritative volumetric Stage of Groundwater Extraction (SOE) data with source & year.
+      2. Station-year normalized pre-monsoon and post-monsoon 10-year decadal trends.
+      3. Equal Station-Year Weighting across all monitoring wells in the block.
+
+    DOES NOT classify individual monitoring stations as official assessment units.
+    Returns 'unassessed' with explicit rationale if required administrative data is incomplete.
+    """
+    try:
+        return evaluate_block_administrative_unit(
+            block_name=block_name,
+            stage_of_extraction_pct=stage_of_extraction_pct,
+            soe_source=soe_source,
+            assessment_year=assessment_year,
+            state=state,
+            district=district,
+            min_stations_per_year=min_stations_per_year,
+            db=db,
+        )
+    except Exception as e:
+        log.warning(f"Assessment unit evaluation error or DB unreachable: {e}")
+        from app.services.assessment_unit import _unassessed_response
+        return _unassessed_response(
+            block_name,
+            f"Unassessed for {block_name}: Database connection unavailable to query stations ({e}).",
+            stage_of_extraction_pct=stage_of_extraction_pct,
+            soe_source=soe_source,
+            assessment_year=assessment_year,
+        )
+
+
+@router.get("/gec/assessment-units", tags=["GEC-2015 Assessment"])
+def get_gec_assessment_units(
+    state: Optional[str] = Query(None),
+    district: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    List administrative assessment units (blocks/taluks) in the monitoring network.
+    """
+    try:
+        return list_administrative_assessment_units(db=db, state=state, district=district)
+    except Exception as e:
+        log.warning(f"Could not list assessment units (DB unavailable or error): {e}")
+        return {
+            "total_units": 0,
+            "assessment_units": [],
+            "framework": "CGWB GEC-2015 Methodology",
+            "note": "Database currently unavailable.",
+        }
+
+
 @router.get("/alerts", tags=["Alerts"])
 def active_alerts(state: Optional[str]=Query(None), district: Optional[str]=Query(None), hours: int=Query(48), db: Session=Depends(get_db)):
-    alerts = get_active_alerts(db, state=state, district=district, days=hours // 24 or 2)
-    return {"total": len(alerts), "alerts": alerts}
+    try:
+        alerts = get_active_alerts(db, state=state, district=district, days=hours // 24 or 2)
+    except Exception as e:
+        log.warning(f"Could not fetch active alerts (DB unavailable or error): {e}")
+        alerts = []
+    return {
+        "total": len(alerts),
+        "alerts": alerts,
+        "alert_type": "exploratory_depth_screening_alert",
+        "is_official_cgwb_classification": False,
+        "methodological_disclaimer": (
+            "Individual station alerts are exploratory point-level depth screening indicators. "
+            "They do NOT constitute official statutory CGWB GEC-2015 administrative assessment unit classifications."
+        ),
+    }
 
 
 @router.get("/alerts/anomalies", tags=["Alerts"])
