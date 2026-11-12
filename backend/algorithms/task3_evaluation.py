@@ -16,7 +16,7 @@ Computes:
 METHODOLOGICAL SEPARATION (Statutory CGWB/GEC-2015 vs. Point-Level Depth Tiers):
   1. Statutory CGWB GEC-2015 Categorization:
      Evaluates administrative assessment units (taluks/blocks/watersheds) using volumetric
-     Stage of Groundwater Extraction (SOE = Total Annual Extraction / Annual Extractable Recharge * 100%)
+     Stage of Groundwater Extraction (SOE = Existing Gross Groundwater Draft for All Uses / Annual Extractable Groundwater Resource * 100%)
      and verified long-term (10-year) pre-monsoon and post-monsoon water table decline trends.
      Individual monitoring wells are NEVER classified as officially assessed blocks.
   2. Point-Level Depth Indicator Tier:
@@ -165,7 +165,7 @@ def classify_gec2015_assessment_unit(
       1. Valid administrative assessment unit name (e.g., taluk or block).
          District fallback is strictly prohibited.
       2. Valid assessment-unit Stage of Groundwater Extraction (SOE):
-         SOE = (Existing Gross Draft for All Uses / Annual Extractable Resource) * 100%
+         SOE = (Existing Gross Draft for All Uses / Annual Extractable Groundwater Resource) * 100%
          A legitimate 0.0% extraction is valid; strictly negative values are rejected.
          Authoritative source citation and assessment year required for official evaluations.
          SOE CANNOT be derived from local well depth or water table levels.
@@ -183,7 +183,7 @@ def classify_gec2015_assessment_unit(
          - If either pre- or post-monsoon trend shows significant decline: Critical
          - If neither trend shows decline: Semi-Critical
       4. SOE > 100%:
-         - Over-Exploited (draft exceeds annual extractable recharge)
+         - Over-Exploited (draft exceeds Annual Extractable Groundwater Resource)
 
     Returns:
         Structured dict with category, label, SOE, trend flags, and statutory rationale.
@@ -241,7 +241,7 @@ def classify_gec2015_assessment_unit(
             "rationale": (
                 f"Unassessed for {unit_name}: Valid assessment-unit Stage of Groundwater Extraction (SOE >= 0.0%) "
                 "data is unavailable. GEC-2015 categorization requires volumetric gross draft and "
-                "annual extractable resource accounting from official CGWB Dynamic Ground Water Resource Assessments. "
+                "Annual Extractable Groundwater Resource accounting from official CGWB Dynamic Ground Water Resource Assessments. "
                 "SOE cannot be derived from well depth or local water level trends."
             ),
         }
@@ -328,7 +328,7 @@ def classify_gec2015_assessment_unit(
         category = "over_exploited"
         category_label = "Over-Exploited"
         rationale = (
-            f"SOE exceeds 100% ({soe:.1f}%) in {unit_name}; groundwater draft exceeds annual extractable recharge. "
+            f"SOE exceeds 100% ({soe:.1f}%) in {unit_name}; groundwater draft exceeds Annual Extractable Groundwater Resource. "
             f"Validated with decadal trends (pre-monsoon {pre_monsoon_years_count} yrs, post-monsoon {post_monsoon_years_count} yrs)."
         )
     elif soe <= GEC_SAFE_STAGE_MAX:
@@ -382,30 +382,50 @@ def classify_gec2015_assessment_unit(
     }
 
 
+DEFAULT_MIN_STATIONS_PER_YEAR = 2
+
+
 def aggregate_block_seasonal_trends(
     readings_df: pd.DataFrame,
     stations_df: pd.DataFrame,
     block_name: str,
-    min_stations_per_year: int = 1,
+    district: Optional[str] = None,
+    state: Optional[str] = None,
+    min_stations_per_year: int = DEFAULT_MIN_STATIONS_PER_YEAR,
 ) -> Dict[str, Any]:
     """
     Aggregate station-level observations across an administrative assessment unit (block)
     to compute block-wide pre-monsoon (Apr-May) and post-monsoon (Oct-Nov) decadal trends.
 
     METHODOLOGICAL REQUIREMENTS & DATA INTEGRITY:
-      1. Spatial Representation: All monitoring stations belonging to the exact administrative
-         block/taluk are identified. Individual well trends NEVER substitute for block trends.
-      2. Station-Year Normalization (Anti-Dominance Guard):
+      1. Spatial Representation & Network Design:
+         Under standard hydrogeological network principles (WMO No. 168 / CGWB Network Design Principles),
+         a single point-source observation well cannot establish spatial representativeness for an
+         entire administrative block. A block must have a distributed monitoring network (>= 2 stations),
+         and at least 2 spatially distinct monitoring stations must contribute qualifying seasonal data
+         for a year to be considered spatially representative.
+      2. Observation Data-Quality Filtering:
+         Screen all readings before seasonal aggregation:
+           - Exclude water_level_m < 0.0 m bgl (unphysical negative depth)
+           - Exclude water_level_m > 300.0 m bgl (exceeds physical monitoring well depth in India)
+           - Exclude data_quality_flag in ('E', 'ERROR', 'ERR', 'S', 'SUSPECT', 'R', 'REJECTED', 'BAD', 'INVALID')
+           - Exclude readings marked as sensor anomalies (is_anomaly=True)
+           - Exclude null, NaN, or non-finite readings
+         Detailed screening exclusions and surviving coverage counts are tracked and reported.
+      3. Unambiguous Administrative Identification:
+         Exact case-insensitive match on block name. If stations matching the block name span
+         multiple districts, explicit district identification is required to prevent accidental
+         cross-district station merging.
+      4. Station-Year Normalization (Anti-Dominance Guard):
          Seasonal water level averages are calculated per station per year first:
              h_bar(s, y, season) = (1 / N_{s, y, season}) * sum_{k} h_{s, y, season, k}
          Then aggregated into block-level seasonal values using Equal Station-Year Weighting:
              H_bar_{block}(y, season) = (1 / |S_{y, season}|) * sum_{s in S_{y, season}} h_bar(s, y, season)
          This guarantees that high-frequency telemetry stations (thousands of readings/season)
          do NOT dominate the block average over manual CGWB monitoring wells.
-      3. Coverage Reporting & Decadal Verification:
-         Reports contributing station count, station identifiers, and total observations for
-         every year. Statutory GEC-2015 requires at least MIN_DECADAL_TREND_YEARS (10) separate
-         qualifying years for pre-monsoon AND 10 years for post-monsoon.
+      5. Decadal Seasonal Completeness:
+         Statutory GEC-2015 requires at least MIN_DECADAL_TREND_YEARS (10) separate spatially
+         representative years for pre-monsoon AND 10 years for post-monsoon.
     """
     if (
         readings_df is None
@@ -417,6 +437,8 @@ def aggregate_block_seasonal_trends(
     ):
         return {
             "assessment_unit": block_name,
+            "district": district,
+            "state": state,
             "station_count": 0,
             "station_ids": [],
             "weighting_method": "equal_station_year_weighting",
@@ -429,14 +451,31 @@ def aggregate_block_seasonal_trends(
             "pre_monsoon_annual_coverage": [],
             "post_monsoon_annual_coverage": [],
             "coverage_sufficient": False,
+            "spatial_representativeness_met": False,
             "coverage_rationale": f"Insufficient monitoring network: 0 stations located in block '{block_name}'.",
+            "data_quality_screening": {
+                "total_readings_screened": 0,
+                "valid_readings_count": 0,
+                "excluded_readings_count": 0,
+                "exclusion_breakdown": {},
+            },
         }
 
     target_block = str(block_name).strip()
-    matched_stations = stations_df[stations_df["block"].astype(str).str.strip().str.lower() == target_block.lower()]
+    # Exact case-insensitive block matching (no substring)
+    matched_stations = stations_df[stations_df["block"].astype(str).str.strip().str.lower() == target_block.lower()].copy()
+
+    # Disambiguation by state and district
+    if state and "state" in matched_stations.columns:
+        matched_stations = matched_stations[matched_stations["state"].astype(str).str.strip().str.lower() == state.strip().lower()]
+    if district and "district" in matched_stations.columns:
+        matched_stations = matched_stations[matched_stations["district"].astype(str).str.strip().str.lower() == district.strip().lower()]
+
     if matched_stations.empty:
         return {
             "assessment_unit": target_block,
+            "district": district,
+            "state": state,
             "station_count": 0,
             "station_ids": [],
             "weighting_method": "equal_station_year_weighting",
@@ -449,14 +488,60 @@ def aggregate_block_seasonal_trends(
             "pre_monsoon_annual_coverage": [],
             "post_monsoon_annual_coverage": [],
             "coverage_sufficient": False,
+            "spatial_representativeness_met": False,
             "coverage_rationale": f"Insufficient monitoring network: 0 stations located in block '{target_block}'.",
+            "data_quality_screening": {
+                "total_readings_screened": 0,
+                "valid_readings_count": 0,
+                "excluded_readings_count": 0,
+                "exclusion_breakdown": {},
+            },
         }
 
+    # Cross-district duplicate block name check (Item 4)
+    if not district and "district" in matched_stations.columns:
+        unique_districts = sorted(list(set(matched_stations["district"].dropna().astype(str).str.strip().unique())))
+        if len(unique_districts) > 1:
+            return {
+                "assessment_unit": target_block,
+                "district": None,
+                "state": state,
+                "station_count": len(matched_stations),
+                "station_ids": sorted(list(set(matched_stations["station_id"].astype(str)))),
+                "weighting_method": "equal_station_year_weighting",
+                "pre_monsoon_years_count": 0,
+                "post_monsoon_years_count": 0,
+                "pre_monsoon_trend_decline": None,
+                "post_monsoon_trend_decline": None,
+                "pre_monsoon_slope_m_per_year": None,
+                "post_monsoon_slope_m_per_year": None,
+                "pre_monsoon_annual_coverage": [],
+                "post_monsoon_annual_coverage": [],
+                "coverage_sufficient": False,
+                "spatial_representativeness_met": False,
+                "coverage_rationale": (
+                    f"Unassessed: Ambiguous administrative block '{target_block}'. This block name exists in multiple "
+                    f"districts ({', '.join(unique_districts)}). Unambiguous administrative identification requires "
+                    "specifying the district or canonical administrative identifier to prevent accidental merging of stations across districts."
+                ),
+                "data_quality_screening": {
+                    "total_readings_screened": 0,
+                    "valid_readings_count": 0,
+                    "excluded_readings_count": 0,
+                    "exclusion_breakdown": {},
+                },
+            }
+
     station_ids = sorted(list(set(matched_stations["station_id"].astype(str))))
-    df = readings_df[readings_df["station_id"].astype(str).isin(station_ids)].copy()
-    if df.empty or "water_level_m" not in df.columns or "timestamp" not in df.columns:
+    block_district = matched_stations["district"].iloc[0] if "district" in matched_stations.columns else district
+    block_state = matched_stations["state"].iloc[0] if "state" in matched_stations.columns else state
+
+    # Spatial Network Representativeness: Guard against 1-station insufficiency (Item 1)
+    if len(station_ids) < 2:
         return {
             "assessment_unit": target_block,
+            "district": block_district,
+            "state": block_state,
             "station_count": len(station_ids),
             "station_ids": station_ids,
             "weighting_method": "equal_station_year_weighting",
@@ -469,16 +554,119 @@ def aggregate_block_seasonal_trends(
             "pre_monsoon_annual_coverage": [],
             "post_monsoon_annual_coverage": [],
             "coverage_sufficient": False,
-            "coverage_rationale": f"No valid water level readings found for {len(station_ids)} stations in block '{target_block}'.",
+            "spatial_representativeness_met": False,
+            "coverage_rationale": (
+                f"Unassessed for {target_block}: Insufficient spatial monitoring network representativeness. "
+                f"Administrative block '{target_block}' has only {len(station_ids)} monitoring station(s). "
+                "Under standard hydrogeological network principles (WMO No. 168 / CGWB monitoring guidelines), "
+                "a single point well cannot establish spatial representativeness across an entire administrative block. "
+                "At least 2 spatially distinct monitoring stations are required to capture hydrogeological heterogeneity."
+            ),
+            "data_quality_screening": {
+                "total_readings_screened": 0,
+                "valid_readings_count": 0,
+                "excluded_readings_count": 0,
+                "exclusion_breakdown": {},
+            },
         }
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df["year"] = df["timestamp"].dt.year
-    df["month"] = df["timestamp"].dt.month
-    df = df.dropna(subset=["water_level_m"])
+    df = readings_df[readings_df["station_id"].astype(str).isin(station_ids)].copy()
+    if df.empty or "water_level_m" not in df.columns or "timestamp" not in df.columns:
+        return {
+            "assessment_unit": target_block,
+            "district": block_district,
+            "state": block_state,
+            "station_count": len(station_ids),
+            "station_ids": station_ids,
+            "weighting_method": "equal_station_year_weighting",
+            "pre_monsoon_years_count": 0,
+            "post_monsoon_years_count": 0,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+            "pre_monsoon_slope_m_per_year": None,
+            "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_annual_coverage": [],
+            "post_monsoon_annual_coverage": [],
+            "coverage_sufficient": False,
+            "spatial_representativeness_met": False,
+            "coverage_rationale": f"No valid water level readings found for {len(station_ids)} stations in block '{target_block}'.",
+            "data_quality_screening": {
+                "total_readings_screened": 0,
+                "valid_readings_count": 0,
+                "excluded_readings_count": 0,
+                "exclusion_breakdown": {},
+            },
+        }
+
+    # Data Quality Screening (Item 3)
+    total_screened = len(df)
+    numeric_levels = pd.to_numeric(df["water_level_m"], errors="coerce")
+    nan_mask = numeric_levels.isna() | ~np.isfinite(numeric_levels)
+    unphysical_mask = (numeric_levels < 0.0) | (numeric_levels > 300.0)
+
+    flag_mask = pd.Series(False, index=df.index)
+    if "data_quality_flag" in df.columns:
+        bad_flags = {"E", "ERROR", "ERR", "S", "SUSPECT", "R", "REJECTED", "BAD", "INVALID"}
+        flag_mask = df["data_quality_flag"].astype(str).str.strip().str.upper().isin(bad_flags)
+
+    anomaly_mask = pd.Series(False, index=df.index)
+    if "is_anomaly" in df.columns:
+        anomaly_mask = df["is_anomaly"].fillna(False).astype(bool)
+
+    invalid_mask = nan_mask | unphysical_mask | flag_mask | anomaly_mask
+    excluded_count = int(invalid_mask.sum())
+    valid_df = df[~invalid_mask].copy()
+
+    screening_audit = {
+        "total_readings_screened": total_screened,
+        "valid_readings_count": int(len(valid_df)),
+        "excluded_readings_count": excluded_count,
+        "exclusion_breakdown": {
+            "missing_or_non_finite": int(nan_mask.sum()),
+            "unphysical_range": int(unphysical_mask.sum()),
+            "quality_flag_suspect_or_error": int(flag_mask.sum()),
+            "marked_anomaly": int(anomaly_mask.sum()),
+        },
+        "screening_rules": [
+            "Exclude water_level_m < 0.0 m bgl (unphysical negative depth to water table)",
+            "Exclude water_level_m > 300.0 m bgl (exceeds physical monitoring well depth in India)",
+            "Exclude quality flags: E (Error), S (Suspect), R (Rejected), BAD, INVALID",
+            "Exclude sensor readings flagged as anomalies (is_anomaly=True)",
+        ],
+    }
+
+    if valid_df.empty:
+        return {
+            "assessment_unit": target_block,
+            "district": block_district,
+            "state": block_state,
+            "station_count": len(station_ids),
+            "station_ids": station_ids,
+            "weighting_method": "equal_station_year_weighting",
+            "pre_monsoon_years_count": 0,
+            "post_monsoon_years_count": 0,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+            "pre_monsoon_slope_m_per_year": None,
+            "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_annual_coverage": [],
+            "post_monsoon_annual_coverage": [],
+            "coverage_sufficient": False,
+            "spatial_representativeness_met": False,
+            "coverage_rationale": (
+                f"Unassessed for {target_block}: All {total_screened} observations were excluded during data-quality "
+                "screening (suspect/error flags, unphysical ranges, or anomalies)."
+            ),
+            "data_quality_screening": screening_audit,
+        }
+
+    valid_df["timestamp"] = pd.to_datetime(valid_df["timestamp"])
+    valid_df["year"] = valid_df["timestamp"].dt.year
+    valid_df["month"] = valid_df["timestamp"].dt.month
+    valid_df["water_level_m"] = valid_df["water_level_m"].astype(float)
 
     def _process_season(season_months: list[int]) -> tuple[int, Optional[bool], Optional[float], list[dict]]:
-        season_df = df[df["month"].isin(season_months)]
+        season_df = valid_df[valid_df["month"].isin(season_months)]
         if season_df.empty:
             return 0, None, None, []
 
@@ -504,6 +692,7 @@ def aggregate_block_seasonal_trends(
                 "contributing_station_ids": contributing_stns,
                 "total_readings_count": total_obs,
                 "is_representative": is_rep,
+                "representativeness_criterion": f">={min_stations_per_year} spatially distinct stations",
                 "weighting_method": "equal_station_year_weighting",
             })
 
@@ -530,12 +719,15 @@ def aggregate_block_seasonal_trends(
 
     coverage_sufficient = bool(pre_years >= MIN_DECADAL_TREND_YEARS and post_years >= MIN_DECADAL_TREND_YEARS)
     coverage_rationale = (
-        f"Decadal coverage: pre-monsoon={pre_years} years, post-monsoon={post_years} years "
-        f"(statutory threshold = {MIN_DECADAL_TREND_YEARS} years each)."
+        f"Decadal coverage: pre-monsoon={pre_years} spatially representative years, post-monsoon={post_years} "
+        f"spatially representative years (statutory threshold = {MIN_DECADAL_TREND_YEARS} years each, "
+        f"with >= {min_stations_per_year} stations per representative year under hydrogeological network principles)."
     )
 
     return {
         "assessment_unit": target_block,
+        "district": block_district,
+        "state": block_state,
         "station_count": len(station_ids),
         "station_ids": station_ids,
         "weighting_method": "equal_station_year_weighting",
@@ -549,7 +741,10 @@ def aggregate_block_seasonal_trends(
         "pre_monsoon_annual_coverage": pre_coverage,
         "post_monsoon_annual_coverage": post_coverage,
         "coverage_sufficient": coverage_sufficient,
+        "spatial_representativeness_met": True,
+        "min_stations_per_year": min_stations_per_year,
         "coverage_rationale": coverage_rationale,
+        "data_quality_screening": screening_audit,
     }
 
 
@@ -565,7 +760,9 @@ def evaluate_assessment_unit(
     soe_source: Optional[str] = None,
     assessment_year: Optional[int | str] = None,
     require_authoritative_metadata: bool = False,
-    min_stations_per_year: int = 1,
+    min_stations_per_year: int = DEFAULT_MIN_STATIONS_PER_YEAR,
+    district: Optional[str] = None,
+    state: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Perform statutory GEC-2015 assessment at the administrative assessment-unit level (block/taluk).
@@ -573,7 +770,14 @@ def evaluate_assessment_unit(
     """
     agg_details = None
     if readings_df is not None and stations_df is not None:
-        agg = aggregate_block_seasonal_trends(readings_df, stations_df, block_name, min_stations_per_year=min_stations_per_year)
+        agg = aggregate_block_seasonal_trends(
+            readings_df,
+            stations_df,
+            block_name,
+            district=district,
+            state=state,
+            min_stations_per_year=min_stations_per_year,
+        )
         agg_details = agg
         pre_monsoon_trend_decline = agg["pre_monsoon_trend_decline"]
         post_monsoon_trend_decline = agg["post_monsoon_trend_decline"]
@@ -601,6 +805,14 @@ def evaluate_assessment_unit(
         res["post_monsoon_slope_m_per_year"] = agg_details.get("post_monsoon_slope_m_per_year")
         res["station_count"] = agg_details.get("station_count", 0)
         res["station_ids"] = agg_details.get("station_ids", [])
+        res["data_quality_screening"] = agg_details.get("data_quality_screening")
+        res["spatial_representativeness_met"] = agg_details.get("spatial_representativeness_met", False)
+        if not agg_details.get("coverage_sufficient", False):
+            res["category"] = "unassessed"
+            res["category_label"] = "Unassessed"
+            res["rationale"] = agg_details.get("coverage_rationale", res["rationale"])
+
+    return res
 
     return res
 

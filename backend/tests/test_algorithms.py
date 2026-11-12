@@ -203,7 +203,7 @@ def test_gec2015_boundary_conditions():
     )
     assert res_90_trend["category"] == "critical"
 
-    # SOE > 100% -> Over-Exploited (draft exceeds extractable recharge)
+    # SOE > 100% -> Over-Exploited (draft exceeds Annual Extractable Groundwater Resource)
     res_oe_100_1 = classify_gec2015_assessment_unit(
         100.01, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", pre_monsoon_years_count=10, post_monsoon_years_count=10
     )

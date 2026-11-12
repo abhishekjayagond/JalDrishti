@@ -209,15 +209,19 @@ The TimescaleDB database contains **468 total groundwater stations** across **26
   - Sandstone: $0.06 - 0.08$
 - **Correlation:** Computes lag-time correlation between IMD precipitation pulses and aquifer recharge response curves.
 
-### Task 3: CGWB Resource Depletion Evaluation
+### Task 3: Point-Level Depth Screening & Statutory GEC-2015 Resource Evaluation
 - **File:** [`backend/algorithms/task3_evaluation.py`](file:///D:/major-project/JalDrishti/backend/algorithms/task3_evaluation.py)
-- **Classification Criteria (GEC-2015 Norms):**
-  - **Safe:** Water level $< 8\text{ m bgl}$, stage of extraction $< 70\%$.
-  - **Semi-Critical:** Water level $8 - 15\text{ m bgl}$, stage of extraction $70 - 90\%$.
-  - **Critical:** Water level $15 - 25\text{ m bgl}$, stage of extraction $90 - 100\%$.
-  - **Over-Exploited:** Water level $> 25\text{ m bgl}$, stage of extraction $> 100\%$.
-- **Depletion Timeline:** Linear extrapolation of 3-year drawdown trend to calculate years remaining until well bottom ($d_{\text{well}}$).
-- **Resource Availability Index (RAI):** Scaled index from $0$ (exhausted) to $100$ (pristine).
+- **Point-Level Operational Depth Screening Tiers (Field exploratory screening for observation wells):**
+  - **Safe Depth Tier:** Water depth $< 8\text{ m bgl}$
+  - **Semi-Critical Depth Tier:** Water depth $8 - 15\text{ m bgl}$
+  - **Critical Depth Tier:** Water depth $15 - 25\text{ m bgl}$
+  - **Over-Exploited Depth Tier:** Water depth $> 25\text{ m bgl}$
+  *(Note: Depth tiers are exploratory indicators for individual wells; they are strictly distinguished from statutory CGWB assessment-unit categorizations).*
+- **Statutory CGWB GEC-2015 Administrative Assessment-Unit Categorization:**
+  - Evaluates contiguous administrative units (taluks/blocks) using volumetric Stage of Groundwater Extraction ($\text{SOE} = \frac{\text{Existing Gross Draft}}{\text{Annual Extractable Groundwater Resource}} \times 100\%$) and verified decadal pre/post-monsoon trend records ($\ge 2$ stations/year).
+  - Categorization: Safe ($\text{SOE} \le 70\%$, no dual decline), Semi-Critical ($70\% < \text{SOE} \le 90\%$ or $\le 70\%$ with dual decline), Critical ($90\% < \text{SOE} \le 100\%$ with decline), Over-Exploited ($\text{SOE} > 100\%$).
+- **Depletion Horizon:** Cadence-aware linear extrapolation; suppressed unless verified drilled-well depth and hydrogeological parameters exist.
+- **Resource Availability Index (RAI):** Heuristic operational screening score from $0$ (severely stressed) to $100$ (shallow water table).
 
 ---
 

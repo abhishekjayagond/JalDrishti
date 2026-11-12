@@ -270,11 +270,14 @@ def task3_station(station_id: str, days: int=Query(365), stage_of_dev: Optional[
 def get_gec_assessment_unit(
     block_name: str,
     stage_of_extraction_pct: Optional[float] = Query(None, ge=0.0, description="Stage of Groundwater Extraction (%) from authoritative CGWB assessment"),
-    soe_source: Optional[str] = Query(None, description="Authoritative source citation for SOE data"),
+    soe_source: Optional[str] = Query(None, description="Authoritative source citation for SOE data (e.g. 'CGWB Dynamic Ground Water Resources Assessment of India (2023)')"),
     assessment_year: Optional[int] = Query(None, description="Assessment year of the SOE data"),
+    annual_extractable_groundwater_resource_ham: Optional[float] = Query(None, gt=0.0, description="Annual Extractable Groundwater Resource (in hectare-metres, ham)"),
+    existing_gross_draft_total_ham: Optional[float] = Query(None, ge=0.0, description="Existing Gross Groundwater Draft for All Uses (in hectare-metres, ham)"),
     state: Optional[str] = Query(None, description="Filter stations by state"),
     district: Optional[str] = Query(None, description="Filter stations by district"),
-    min_stations_per_year: int = Query(1, ge=1, description="Minimum stations required for a year to be representative"),
+    canonical_id: Optional[str] = Query(None, description="Canonical assessment-unit identifier (e.g. 'KA:BENGALURU_URBAN:ANEKAL')"),
+    min_stations_per_year: int = Query(2, ge=1, description="Minimum spatially distinct stations required for a year to be representative (default 2 per hydrogeological guidelines)"),
     db: Session = Depends(get_db),
 ):
     """
@@ -282,8 +285,10 @@ def get_gec_assessment_unit(
 
     Evaluates an administrative assessment unit (taluk/block) using:
       1. Authoritative volumetric Stage of Groundwater Extraction (SOE) data with source & year.
+         SOE (%) = (Existing Gross Draft / Annual Extractable Groundwater Resource) * 100%.
       2. Station-year normalized pre-monsoon and post-monsoon 10-year decadal trends.
       3. Equal Station-Year Weighting across all monitoring wells in the block.
+      4. Spatial monitoring network representativeness requirement (>=2 stations).
 
     DOES NOT classify individual monitoring stations as official assessment units.
     Returns 'unassessed' with explicit rationale if required administrative data is incomplete.
@@ -294,8 +299,11 @@ def get_gec_assessment_unit(
             stage_of_extraction_pct=stage_of_extraction_pct,
             soe_source=soe_source,
             assessment_year=assessment_year,
+            annual_extractable_groundwater_resource_ham=annual_extractable_groundwater_resource_ham,
+            existing_gross_draft_total_ham=existing_gross_draft_total_ham,
             state=state,
             district=district,
+            canonical_id=canonical_id,
             min_stations_per_year=min_stations_per_year,
             db=db,
         )
@@ -308,6 +316,9 @@ def get_gec_assessment_unit(
             stage_of_extraction_pct=stage_of_extraction_pct,
             soe_source=soe_source,
             assessment_year=assessment_year,
+            district=district,
+            state=state,
+            canonical_id=canonical_id,
         )
 
 

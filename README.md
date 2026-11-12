@@ -31,14 +31,23 @@ Groundwater accounts for **63% of India's irrigation water** and **85% of rural 
 - Derives net recharge volumes and recharge rates (m/day) across distinct aquifer formations (Alluvial, Hard Rock, Basalt, Granite, Sandstone).
 - Detects recharge lag times and identifies critically stressed zones experiencing zero or negative seasonal recovery.
 
-### 3. Aquifer Resource Evaluation & Depth Indicators
-- Implements standardized exploratory groundwater depth indicator tiers:
-  - **Safe Depth**: Water depth < 8 m bgl
-  - **Semi-Critical Depth**: Water depth 8–15 m bgl
-  - **Critical Depth**: Water depth 15–25 m bgl
-  - **Over-Exploited Depth**: Water depth > 25 m bgl
-- Explicitly distinguishes point-level operational depth indicators from statutory CGWB/GEC-2015 assessment-unit categorization (which requires Stage of Groundwater Extraction % = gross extraction / recharge × 100% and decadal water level trends across entire taluks/blocks).
-- Computes depletion rate velocity (m/year), estimated years-to-depletion, and Resource Availability Index (RAI).
+### 3. Aquifer Resource Evaluation, Depth Indicators & Statutory GEC-2015 Categorization
+- **Operational Point-Level Depth Screening Tiers** (Field exploratory screening indicators for individual observation wells; strictly distinguished from official administrative block assessments):
+  - **Safe Depth Tier**: Water depth < 8 m bgl
+  - **Semi-Critical Depth Tier**: Water depth 8–15 m bgl
+  - **Critical Depth Tier**: Water depth 15–25 m bgl
+  - **Over-Exploited Depth Tier**: Water depth > 25 m bgl
+  *(Note: Point-level depth screening tiers are exploratory operational indicators. They must NOT be confused with or substituted for official statutory CGWB GEC-2015 assessment-unit categorizations.)*
+- **Statutory CGWB GEC-2015 Administrative Assessment-Unit Categorization**:
+  - Evaluates administrative assessment units (Taluks / Blocks / Mandals / Watersheds) strictly as contiguous hydrogeological units. Individual monitoring wells are NEVER classified as official assessment units, and district fallback is strictly prohibited.
+  - Requires authoritative volumetric **Stage of Groundwater Extraction (SOE)**:
+    $$\text{SOE (\%)} = \frac{\text{Existing Gross Groundwater Draft for All Uses}}{\text{Annual Extractable Groundwater Resource}} \times 100\%$$
+  - Validates SOE provenance against traceable records containing canonical assessment-unit identity, official CGWB publication citation, assessment year, and supporting volumetric accounting (in hectare-metres, ham). Rejects arbitrary user descriptions or unverified percentages as `Unassessed`.
+  - Enforces spatial network representativeness: requires a distributed monitoring network ($\ge 2$ active stations) and $\ge 2$ spatially distinct monitoring stations per representative year under WMO No. 168 / CGWB network design principles. Solitary single-well blocks return `Unassessed`.
+  - Requires at least 10 years of spatially representative pre-monsoon (Apr–May) AND 10 years of post-monsoon (Oct–Nov) records separately.
+  - Station-year normalized Equal Station-Year Weighting prevents high-frequency telemetry wells from dominating manual observation wells.
+  - Documented observation data-quality screening filters out invalid/suspect flags (`E`, `S`, `R`), anomalies, and unphysical levels before seasonal aggregation.
+- Computes cadence-aware depletion rate velocity (m/year) and heuristic Resource Availability Index (RAI).
 
 ### 4. Machine Learning & Spatial-Temporal AI Forecasting
 - Pre-monsoon groundwater level forecasting trained on 390 long-history Karnataka CGWB observation wells (1994–2025).
@@ -177,10 +186,12 @@ The application opens at `http://localhost:3000`.
 ### Analytical Modules
 - `GET /api/task1/{station_id}?hours=720` — Task 1 Water level fluctuation, trend, and anomalies
 - `GET /api/task2/{station_id}?days=365` — Task 2 Dynamic recharge estimation and rainfall correlation
-- `GET /api/task3/{station_id}?days=365` — Task 3 CGWB classification and depletion timeline
+- `GET /api/task3/{station_id}?days=365` — Task 3 Exploratory point-level depth screening indicator and cadence-aware depletion metrics (non-statutory)
+- `GET /api/gec/assessment-unit/{block_name}` — Statutory CGWB GEC-2015 Administrative Assessment-Unit Evaluation (requires authoritative SOE provenance & decadal seasonal trends)
+- `GET /api/gec/assessment-units` — List administrative assessment units across monitoring network with spatial representativeness status
 - `GET /api/ranking/states` — National state groundwater health ranking
 - `GET /api/ranking/districts/{state}` — District-level groundwater health ranking
-- `GET /api/alerts?hours=48` — Active threshold violation alerts
+- `GET /api/alerts?hours=48` — Active threshold violation alerts (exploratory depth screening)
 - `GET /api/alerts/anomalies?hours=24` — Detected sensor anomaly events
 - `GET /api/export/summary/csv` — Export comprehensive station evaluation dataset
 
