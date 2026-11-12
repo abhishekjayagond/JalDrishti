@@ -5,8 +5,11 @@ import {
   IconExternal
 } from './icons';
 
-export default function ApplicationFooter({ onNavigate, activeTab }) {
+export default function ApplicationFooter({ onNavigate, activeTab, apiBase }) {
   const currentYear = new Date().getFullYear();
+  const docsUrl = apiBase
+    ? `${apiBase.replace(/\/$/, '')}/docs`
+    : (process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL.replace(/\/$/, '')}/docs` : 'http://localhost:8000/docs');
 
   const handleNavClick = (tabId) => {
     if (onNavigate) {
@@ -136,7 +139,7 @@ export default function ApplicationFooter({ onNavigate, activeTab }) {
               <IconExternal size={11} style={{ opacity: 0.6 }} />
             </a>
             <a
-              href="http://localhost:8000/docs"
+              href={docsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="footer-contact-link"
@@ -159,9 +162,9 @@ export default function ApplicationFooter({ onNavigate, activeTab }) {
               <IconMail size={13} />
               <span>abhishekjayagond@gmail.com</span>
             </a>
-            <a href="tel:+918000000000" className="footer-contact-link">
+            <a href="tel:+919449512887" className="footer-contact-link">
               <IconPhone size={13} />
-              <span>+91 (800) 000-0000</span>
+              <span>+91 94495 12887</span>
             </a>
             <div style={{ fontSize: '11px', color: 'var(--text-subtle)', marginTop: '4px' }}>
               Karnataka, India · CGWB Series

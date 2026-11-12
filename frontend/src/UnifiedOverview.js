@@ -220,6 +220,7 @@ export default function UnifiedOverview({
   alerts = [],
   onNavigate,
   lastObservationDate = 'May 2025',
+  onToast = null,
 }) {
   const [selectedState, setSelectedState]       = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('');
@@ -367,7 +368,10 @@ export default function UnifiedOverview({
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => onSelectStation(null)}
+              onClick={() => {
+                onSelectStation(null);
+                if (onToast) onToast('Cleared well selection. Returned to national overview.', 'info');
+              }}
               title="Return to National Overview"
             >
               <IconClose size={12} style={{ marginRight: '4px' }} /> Return to National Overview
@@ -569,7 +573,10 @@ export default function UnifiedOverview({
                         <button
                           key={st.station_id}
                           className="station-chip"
-                          onClick={() => onSelectStation(st)}
+                          onClick={() => {
+                            onSelectStation(st);
+                            if (onToast) onToast(`Loaded well dossier for ${st.station_name || st.village || st.station_id}.`, 'success');
+                          }}
                           title={`Select ${st.station_name || st.village || st.station_id}`}
                         >
                           <StatusSymbol status={st.status || 'safe'} size={9} />

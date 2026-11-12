@@ -13,7 +13,8 @@ export default function AlertsView({
   onSelectStation,
   apiBase = 'http://localhost:8000',
   onRefresh,
-  isRefreshing = false
+  isRefreshing = false,
+  onToast = null
 }) {
   const [severityFilter, setSeverityFilter] = useState('all');
   const [searchQuery, setSearchQuery]       = useState('');
@@ -110,7 +111,14 @@ export default function AlertsView({
             {onRefresh && (
               <button
                 className="btn btn-primary btn-sm"
-                onClick={onRefresh}
+                onClick={async () => {
+                  try {
+                    await onRefresh();
+                    if (onToast) onToast('Surveillance alerts re-evaluated successfully.', 'success');
+                  } catch (e) {
+                    if (onToast) onToast('Alert check failed: telemetry API unreachable.', 'error');
+                  }
+                }}
                 disabled={isRefreshing}
                 title="Refresh alert triggers"
               >
@@ -123,6 +131,7 @@ export default function AlertsView({
               className="btn btn-secondary btn-sm"
               download
               title="Export active alerts CSV"
+              onClick={() => onToast && onToast('Downloading active alerts summary CSV.', 'info')}
             >
               <IconDownload size={13} style={{ marginRight: '4px' }} /> Export CSV
             </a>

@@ -754,19 +754,34 @@ export default function App() {
   const getInitialTab = () => {
     try {
       const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (!hash) return 'overview';
-      if (VALID_TABS.includes(hash)) return hash;
+      if (hash) {
+        if (VALID_TABS.includes(hash)) return hash;
+        return '404';
+      }
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
-      if (tab && VALID_TABS.includes(tab)) return tab;
-      return '404';
+      if (tab) {
+        if (VALID_TABS.includes(tab)) return tab;
+        return '404';
+      }
+      const path = (window.location.pathname || '').replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (path && path !== 'index.html' && path !== '') {
+        if (VALID_TABS.includes(path)) return path;
+        return '404';
+      }
+      return 'overview';
     } catch (e) {}
     return 'overview';
   };
   const [activeTab, setActiveTabState]        = useState(getInitialTab);
+  const [taskPage, setTaskPage]               = useState(null);
+  const [loadingStation, setLoadingStation]   = useState(false);
+  const [lastRefresh, setLastRefresh]         = useState(null);
+  const [isRefreshing, setIsRefreshing]       = useState(false);
 
   const setActiveTab = (tab) => {
     setActiveTabState(tab);
+    setTaskPage(null);
     try {
       window.location.hash = tab;
     } catch (e) {}
@@ -796,6 +811,9 @@ export default function App() {
       forecast: 'JalDrishti | AI Groundwater Level Forecast',
       alerts: 'JalDrishti | Aquifer Depletion Alerts & Critical Zones',
       methodology: 'JalDrishti | Scientific Methodology & CGWB Framework',
+      task1: 'JalDrishti | Task 1: Water Table Fluctuation Analysis',
+      task2: 'JalDrishti | Task 2: Dynamic Aquifer Recharge (WTF)',
+      task3: 'JalDrishti | Task 3: Groundwater Resource Evaluation',
       404: 'JalDrishti | 404 — Aquifer Node Not Found'
     };
     const descriptions = {
@@ -805,19 +823,18 @@ export default function App() {
       forecast: 'Machine learning groundwater level forecasting using polynomial and linear hydrogeological regression models.',
       alerts: 'Real-time groundwater depletion warnings, over-exploited aquifer alerts, and critical recharge notifications across India.',
       methodology: 'Standardized CGWB Ground Water Estimation Committee (GEC-2015) methodology, Water Table Fluctuation (WTF) formula, and AI forecasting architecture.',
+      task1: 'Detailed pre-monsoon and post-monsoon water table fluctuation modeling, long-term trends, and telemetry amplitude analysis.',
+      task2: 'Dynamic monsoon aquifer recharge estimation utilizing specific yield and the Water Table Fluctuation (WTF) method.',
+      task3: 'Groundwater draft vs recharge balance evaluation, stage of extraction categorization, and depletion horizon estimation.',
       404: 'JalDrishti 404 — The requested groundwater observation route or telemetry resource could not be found.'
     };
-    document.title = titles[activeTab] || 'JalDrishti | Groundwater Intelligence & Forecasting';
+    const activeKey = taskPage || activeTab;
+    document.title = titles[activeKey] || 'JalDrishti | Groundwater Intelligence & Forecasting';
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) {
-      metaDesc.setAttribute('content', descriptions[activeTab] || descriptions.overview);
+      metaDesc.setAttribute('content', descriptions[activeKey] || descriptions.overview);
     }
-  }, [activeTab]);
-
-  const [taskPage, setTaskPage]               = useState(null);
-  const [loadingStation, setLoadingStation]   = useState(false);
-  const [lastRefresh, setLastRefresh]         = useState(null);
-  const [isRefreshing, setIsRefreshing]       = useState(false);
+  }, [activeTab, taskPage]);
   const [mapStatusFilter, setMapStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery]         = useState('');
   const [selectedStateFilter, setSelectedStateFilter] = useState('all');
@@ -1254,9 +1271,9 @@ export default function App() {
                   <IconMail size={13} />
                   <span>abhishekjayagond@gmail.com</span>
                 </a>
-                <a href="tel:+918000000000" className="mobile-contact-link">
+                <a href="tel:+919449512887" className="mobile-contact-link">
                   <IconPhone size={13} />
-                  <span>+91 (800) 000-0000</span>
+                  <span>+91 94495 12887</span>
                 </a>
               </div>
             </div>
@@ -1279,6 +1296,7 @@ export default function App() {
             alerts={alerts}
             onNavigate={(tab) => setActiveTab(tab)}
             lastObservationDate={lastObservationDateLabel}
+            onToast={showToast}
           />
         )}
 
@@ -1289,7 +1307,7 @@ export default function App() {
           <div className="map-page-layout">
             <div className="map-toolbar-strip">
               <div className="mt-left-group">
-                <div className="search-input-wrap" style={{ width: '240px' }}>
+                <div className="search-input-wrap search-input-map">
                   <IconSearch size={14} className="search-icon" />
                   <input
                     type="text"
@@ -1302,10 +1320,9 @@ export default function App() {
                 </div>
 
                 <select
-                  className="form-select form-select-sm"
+                  className="form-select form-select-sm state-filter-select"
                   value={selectedStateFilter}
                   onChange={e => setSelectedStateFilter(e.target.value)}
-                  style={{ width: '180px' }}
                 >
                   <option value="all">All States &amp; UTs</option>
                   {uniqueStates.map(st => (
@@ -1387,7 +1404,7 @@ export default function App() {
             </div>
 
             <div className="directory-filters-bar">
-              <div className="search-input-wrap" style={{ width: '280px' }}>
+              <div className="search-input-wrap search-input-directory">
                 <IconSearch size={15} className="search-icon" />
                 <input
                   type="text"
@@ -1400,10 +1417,9 @@ export default function App() {
               </div>
 
               <select
-                className="form-select form-select-sm"
+                className="form-select form-select-sm state-filter-directory"
                 value={selectedStateFilter}
                 onChange={e => setSelectedStateFilter(e.target.value)}
-                style={{ width: '200px' }}
               >
                 <option value="all">All States &amp; UTs ({stations.length})</option>
                 {uniqueStates.map(st => (
@@ -1455,7 +1471,7 @@ export default function App() {
             4. REBUILT AI GROUNDWATER FORECAST (Requirement 4 & 5)
             ═════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'forecast' && (
-          <AIForecastPanel selectedStation={selected} onSelectStation={selectStation} />
+          <AIForecastPanel selectedStation={selected} onSelectStation={selectStation} onToast={showToast} />
         )}
 
         {/* ═════════════════════════════════════════════════════════════════════
@@ -1467,6 +1483,7 @@ export default function App() {
             stations={stations}
             onSelectStation={selectStation}
             apiBase={API_BASE}
+            onToast={showToast}
           />
         )}
 
@@ -1486,7 +1503,7 @@ export default function App() {
       </main>
 
       {/* ── Global Application Footer (Items 7, 9, 18, 19) ── */}
-      <ApplicationFooter onNavigate={(tab) => setActiveTab(tab)} activeTab={activeTab} />
+      <ApplicationFooter onNavigate={(tab) => setActiveTab(tab)} activeTab={activeTab} apiBase={API_BASE} />
 
       {/* ── Toast Feedback Notification (Items 12 & 13) ── */}
       {toast && (

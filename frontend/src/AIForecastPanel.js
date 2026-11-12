@@ -333,6 +333,7 @@ function ForecastTimeSeriesChart({
 export default function AIForecastPanel({
   selectedStation = null,
   onSelectStation = null,
+  onToast = null,
 }) {
   const [stations, setStations]             = useState([]);
   const [stationId, setStationId]           = useState(selectedStation?.station_id || '');
@@ -494,7 +495,14 @@ export default function AIForecastPanel({
 
           <button
             className="btn btn-secondary btn-sm"
-            onClick={() => { fetchStations(); fetchMetrics(); }}
+            onClick={async () => {
+              try {
+                await Promise.all([fetchStations(), fetchMetrics()]);
+                if (onToast) onToast('AI model and spatial features synchronized.', 'success');
+              } catch (e) {
+                if (onToast) onToast('Unable to synchronize AI model.', 'error');
+              }
+            }}
             title="Reload AI model and features"
           >
             <IconRotateCcw size={13} style={{ marginRight: '4px' }} /> Sync Model
@@ -509,7 +517,19 @@ export default function AIForecastPanel({
             <IconAlert size={15} />
             <span>{error}</span>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={fetchStations}>Retry</button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={async () => {
+              try {
+                await fetchStations();
+                if (onToast) onToast('AI station directory refreshed.', 'success');
+              } catch (e) {
+                if (onToast) onToast('Retry failed: AI service unreachable.', 'error');
+              }
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
 

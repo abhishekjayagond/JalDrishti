@@ -47,9 +47,9 @@ describe('JalDrishti 20-Point Front-End Refinement Tests', () => {
     assert(html.includes(currentYear), `Footer must render current year ${currentYear}`);
     assert(html.includes('Abhishek Jayagond'), 'Footer must attribute Abhishek Jayagond');
 
-    // Clickable phone number
-    assert(html.includes('href="tel:+918000000000"'), 'Phone must be clickable with tel: URI');
-    assert(html.includes('+91 (800) 000-0000'), 'Phone number text must be visible');
+    // Clickable phone number (+91 94495 12887)
+    assert(html.includes('href="tel:+919449512887"'), 'Phone must be clickable with tel:+919449512887 URI');
+    assert(html.includes('+91 94495 12887'), 'Phone number text +91 94495 12887 must be visible');
 
     // Clickable email
     assert(html.includes('href="mailto:abhishekjayagond@gmail.com"'), 'Email must be clickable with mailto: URI');
