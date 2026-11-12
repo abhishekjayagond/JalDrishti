@@ -89,15 +89,15 @@
       },
       {
         "model": "linear_regression",
-        "mae": 1.8172676051325216,
-        "rmse": 2.6207574825634237,
-        "r2": 0.5217745258756343
+        "mae": 1.8148281522623497,
+        "rmse": 2.6173920843318195,
+        "r2": 0.5230019464381235
       },
       {
         "model": "random_forest",
-        "mae": 1.8219610614253066,
-        "rmse": 2.6492713037377174,
-        "r2": 0.511311737370644
+        "mae": 1.8296017967504508,
+        "rmse": 2.6539880648877614,
+        "r2": 0.5095700676958681
       },
       {
         "model": "persistence",
@@ -115,17 +115,22 @@
     "validation_ranking_eligible": [
       {
         "model": "linear_regression",
-        "mae": 1.8172676051325216,
-        "rmse": 2.6207574825634237,
-        "r2": 0.5217745258756343
+        "mae": 1.8148281522623497,
+        "rmse": 2.6173920843318195,
+        "r2": 0.5230019464381235
       },
       {
         "model": "random_forest",
-        "mae": 1.8219610614253066,
-        "rmse": 2.6492713037377174,
-        "r2": 0.511311737370644
+        "mae": 1.8296017967504508,
+        "rmse": 2.6539880648877614,
+        "r2": 0.5095700676958681
       }
     ]
+  },
+  "served_model": {
+    "artifact": "linear_regression.joblib",
+    "is_exact_calibrated_model": true,
+    "alignment_rationale": "The served model is the exact model trained on <=2016 observations, for which the 90% conformal uncertainty radius was calibrated and empirically verified. Zero model mismatch exists."
   },
   "validation_metrics": {
     "persistence": {
@@ -135,15 +140,15 @@
       "n": 1074
     },
     "linear_regression": {
-      "mae": 1.8172676051325216,
-      "rmse": 2.6207574825634237,
-      "r2": 0.5217745258756343,
+      "mae": 1.8148281522623497,
+      "rmse": 2.6173920843318195,
+      "r2": 0.5230019464381235,
       "n": 1074
     },
     "random_forest": {
-      "mae": 1.8219610614253066,
-      "rmse": 2.6492713037377174,
-      "r2": 0.511311737370644,
+      "mae": 1.8296017967504508,
+      "rmse": 2.6539880648877614,
+      "r2": 0.5095700676958681,
       "n": 1074
     },
     "lstm": {
@@ -167,15 +172,15 @@
       "n": 406
     },
     "linear_regression": {
-      "mae": 2.8720452979471167,
-      "rmse": 3.5918184115295397,
-      "r2": -0.12208920469811835,
+      "mae": 2.8729914450320253,
+      "rmse": 3.593521145693194,
+      "r2": -0.12315333003957307,
       "n": 406
     },
     "random_forest": {
-      "mae": 2.9892750949510596,
-      "rmse": 3.7223941083408794,
-      "r2": -0.20515621246199767,
+      "mae": 2.9878108989372616,
+      "rmse": 3.719937469680406,
+      "r2": -0.20356602275905322,
       "n": 406
     },
     "lstm": {
@@ -199,15 +204,15 @@
       "n": 997
     },
     "linear_regression": {
-      "mae": 1.6381474393917301,
-      "rmse": 2.432116293213479,
-      "r2": 0.5737047999399093,
+      "mae": 1.6758965827175039,
+      "rmse": 2.5020376425195905,
+      "r2": 0.5488411854575102,
       "n": 997
     },
     "random_forest": {
-      "mae": 1.7738443156324553,
-      "rmse": 2.583374296464284,
-      "r2": 0.5190317185888291,
+      "mae": 1.7694259643159653,
+      "rmse": 2.5731036271228014,
+      "r2": 0.5228484682758139,
       "n": 997
     },
     "lstm": {
@@ -233,73 +238,91 @@
     "calibration_samples": 406,
     "nominal_confidence_level": 0.9,
     "conformal_quantile_level": 0.9039,
-    "uncertainty_radius_mbgl": 5.767,
-    "radius_mbgl": 5.767,
-    "average_interval_width_mbgl": 11.534,
+    "uncertainty_radius_mbgl": 5.7342,
+    "radius_mbgl": 5.7342,
+    "average_interval_width_mbgl": 11.4684,
     "test_years": [
       2023,
       2024,
       2025
     ],
     "test_samples": 997,
-    "test_empirical_coverage_overall": 0.9649,
+    "test_empirical_coverage_overall": 0.9639,
     "test_coverage_by_year": {
       "2023": {
         "sample_count": 358,
         "empirical_coverage": 0.9777,
-        "mae_mbgl": 1.527
+        "mae_mbgl": 1.546
       },
       "2024": {
         "sample_count": 338,
-        "empirical_coverage": 0.9556,
-        "mae_mbgl": 1.675
+        "empirical_coverage": 0.9615,
+        "mae_mbgl": 1.706
       },
       "2025": {
         "sample_count": 301,
-        "empirical_coverage": 0.9601,
-        "mae_mbgl": 1.729
+        "empirical_coverage": 0.9502,
+        "mae_mbgl": 1.796
       }
+    },
+    "model_alignment": {
+      "served_model": "linear_regression.joblib",
+      "is_exact_calibrated_model": true,
+      "alignment_note": "The model served in production is the exact model trained on <=2016 observations, for which this calibration radius was derived and tested."
     },
     "exchangeability_assumptions_and_limitations": "Split conformal inference guarantees marginal coverage under exchangeability (i.i.d.) between calibration and test data. In non-stationary hydrological systems subject to decadal rainfall trends and deepening groundwater draft, future coverage may deviate from nominal 90% if exchangeability is violated. Reported empirical coverage reflects performance on the 2023\u20132025 test holdout.",
     "note": "Calibrated on distinct temporal calibration holdout (2020, 2022) of selected Linear Regression model. Evaluated on unseen 2023\u20132025 test holdout."
   },
   "multi_horizon_evaluation": {
-    "methodology": "multi_horizon_recursive_autoregressive_evaluation",
-    "description": "Differentiates 1-year rolling forecasts (t+1) from multi-year recursive forecasts (t+2, t+3). In multi-year forecasts, earlier predictions are fed back into lag features, compounding error.",
-    "horizon_1_year_rolling": {
-      "lead_time": "1 year ahead (t+1)",
-      "mae_mbgl": 1.6381474393917301,
-      "rmse_mbgl": 2.432116293213479,
-      "r2": 0.5737047999399093,
-      "sample_count": 997,
-      "input_features": "Ground-truth antecedent observations"
+    "evaluation_protocol": "single_origin_common_cohort_recursive",
+    "forecast_origin_year": 2022,
+    "common_cohort_station_count": 276,
+    "description": "Multi-horizon recursive evaluation executed from fixed origin T0 = 2022 across an identical cohort of 276 stations observed continuously in 2023, 2024, and 2025. Autoregressive predictions are fed back into lag features with actual observation calendar years.",
+    "horizon_1": {
+      "lead_time": "1 year ahead (target 2023)",
+      "forecast_type": "1_year_rolling_forecast",
+      "target_year": 2023,
+      "mae_mbgl": 1.518,
+      "rmse_mbgl": 2.086,
+      "r2": 0.6603,
+      "sample_count": 276,
+      "input_features": "True historical pre-monsoon lags through origin 2022",
+      "error_change_vs_h1_pct": 0.0,
+      "uncertainty_status": "calibrated"
     },
-    "horizon_2_year_recursive": {
-      "lead_time": "2 years ahead (t+2)",
-      "mae_mbgl": 1.7493116859192765,
-      "rmse_mbgl": 2.7558524770222563,
-      "r2": 0.5249488134028746,
-      "sample_count": 338,
-      "input_features": "1-year recursive prediction fed into lag_1",
-      "mae_error_growth_pct": 6.79
+    "horizon_2": {
+      "lead_time": "2 years ahead (target 2024)",
+      "forecast_type": "2_year_recursive_forecast",
+      "target_year": 2024,
+      "mae_mbgl": 1.855,
+      "rmse_mbgl": 2.938,
+      "r2": 0.511,
+      "sample_count": 276,
+      "input_features": "1-year recursive prediction fed back into lag_1 (2023)",
+      "error_change_vs_h1_pct": 22.19,
+      "uncertainty_status": "unavailable",
+      "uncertainty_note": "Multi-horizon recursive uncertainty calibration is unavailable."
     },
-    "horizon_3_year_recursive": {
-      "lead_time": "3 years ahead (t+3)",
-      "mae_mbgl": 1.7396958145739123,
-      "rmse_mbgl": 2.2549396163550948,
-      "r2": 0.5816858363987933,
-      "sample_count": 301,
-      "input_features": "1-year & 2-year recursive predictions fed into lag_1 & lag_2",
-      "mae_error_growth_pct": 6.2
+    "horizon_3": {
+      "lead_time": "3 years ahead (target 2025)",
+      "forecast_type": "3_year_recursive_forecast",
+      "target_year": 2025,
+      "mae_mbgl": 1.73,
+      "rmse_mbgl": 2.256,
+      "r2": 0.578,
+      "sample_count": 276,
+      "input_features": "1-year & 2-year recursive predictions fed back into lag_1 (2024) and lag_2 (2023)",
+      "error_change_vs_h1_pct": 14.0,
+      "uncertainty_status": "unavailable",
+      "uncertainty_note": "Multi-horizon recursive uncertainty calibration is unavailable."
     },
-    "error_compounding_summary": "MAE compounds from 1.638m at 1-year lead time to 1.749m at 2-year lead time and 1.740m at 3-year lead time."
+    "error_trajectory_summary": "On the common cohort (n=276) from origin 2022, MAE is 1.518m at h=1 (2023), increases to 1.855m at h=2 (2024, +22.19%), and is 1.730m at h=3 (2025, +14.0% vs h=1)."
   },
   "model_notes": {
     "target": "next calendar-year pre-monsoon groundwater depth (mbgl)",
     "historical_source": "CGWB pre-monsoon Karnataka extraction from Pre-monsoon_WL_1994-2025.pdf",
     "annual_frequency": true,
-    "production_artifact": "production_linear_regression.joblib",
-    "benchmark_artifact": "linear_regression.joblib",
+    "trend_feature_physics": "gwl_slope_4 calculated using actual calendar years, properly accounting for multi-year gaps (including missing year 2021).",
     "data_leakage_safeguards": "Strictly chronological 4-way split. Imputers and scalers fitted strictly on training observations (<= 2016). Validation set never used for conformal calibration."
   }
 }

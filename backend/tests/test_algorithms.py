@@ -133,40 +133,74 @@ def test_task3_depth_indicator_boundaries():
 
 def test_gec2015_boundary_conditions():
     """Verify statutory GEC-2015 category boundaries & decadal trend rules."""
-    # SOE <= 70%
+    # Guard: Missing assessment unit name returns unassessed
+    res_no_unit = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit=None)
+    assert res_no_unit["category"] == "unassessed"
+    assert "administrative assessment unit" in res_no_unit["rationale"]
+
+    # Guard: Insufficient trend years (<10) for SOE <= 100% returns unassessed
+    res_short_trend = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=5
+    )
+    assert res_short_trend["category"] == "unassessed"
+    assert "Insufficient statutory trend evidence" in res_short_trend["rationale"]
+
+    # Guard: Missing SOE (None or <= 0) returns unassessed
+    res_no_soe = classify_gec2015_assessment_unit(None, assessment_unit="Anekal", trend_years_count=10)
+    assert res_no_soe["category"] == "unassessed"
+
+    # SOE <= 70% with verified 10-year trends
     # No trend declines -> Safe
-    res_safe = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False)
+    res_safe = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_safe["category"] == "safe"
 
     # SOE <= 70% with single decline -> Still Safe under GEC-2015
-    res_safe_one = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False)
+    res_safe_one = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_safe_one["category"] == "safe"
 
     # SOE <= 70% with dual decline -> Semi-Critical
-    res_semi_dual = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True)
+    res_semi_dual = classify_gec2015_assessment_unit(
+        70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_semi_dual["category"] == "semi_critical"
 
     # 70% < SOE <= 90% -> Semi-Critical
-    res_semi_71 = classify_gec2015_assessment_unit(70.01)
+    res_semi_71 = classify_gec2015_assessment_unit(
+        70.01, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_semi_71["category"] == "semi_critical"
 
-    res_semi_90 = classify_gec2015_assessment_unit(90.0)
+    res_semi_90 = classify_gec2015_assessment_unit(
+        90.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_semi_90["category"] == "semi_critical"
 
     # 90% < SOE <= 100%
     # Without trend decline -> Semi-Critical
-    res_90_notrend = classify_gec2015_assessment_unit(95.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False)
+    res_90_notrend = classify_gec2015_assessment_unit(
+        95.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_90_notrend["category"] == "semi_critical"
 
     # With trend decline -> Critical
-    res_90_trend = classify_gec2015_assessment_unit(95.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False)
+    res_90_trend = classify_gec2015_assessment_unit(
+        95.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_90_trend["category"] == "critical"
 
-    # SOE > 100% -> Over-Exploited
-    res_oe_100_1 = classify_gec2015_assessment_unit(100.01)
+    # SOE > 100% -> Over-Exploited (draft exceeds extractable recharge)
+    res_oe_100_1 = classify_gec2015_assessment_unit(
+        100.01, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_oe_100_1["category"] == "over_exploited"
 
-    res_oe_135 = classify_gec2015_assessment_unit(135.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True)
+    res_oe_135 = classify_gec2015_assessment_unit(
+        135.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True, assessment_unit="Anekal", trend_years_count=10
+    )
     assert res_oe_135["category"] == "over_exploited"
 
 
@@ -176,10 +210,10 @@ def test_conflicting_depth_and_gec_indicators():
     Never blend them into a single misleading status.
     """
     # Scenario A: Shallow well (4.5m, Safe Depth) in an Over-Exploited block (SOE = 115%)
-    base_time = pd.Timestamp("2020-01-01 00:00:00")
+    base_time = pd.Timestamp("2010-01-01 00:00:00")
     shallow_readings = pd.DataFrame([
         {"station_id": "STN_SHALLOW_OE", "timestamp": base_time + pd.DateOffset(years=i), "water_level_m": 4.5}
-        for i in range(5)
+        for i in range(12)
     ])
     meta_a = {
         "station_id": "STN_SHALLOW_OE",
@@ -197,12 +231,15 @@ def test_conflicting_depth_and_gec_indicators():
     assert res_a["gec_assessment"]["stage_of_extraction_pct"] == 115.0
     # Both indicators are independently preserved in output
     assert res_a["depth_indicator"]["tier"] != res_a["gec_assessment"]["category"]
+    assert res_a["is_station_official_assessment"] is False
 
     # Scenario B: Deep well (27.5m, Over-Exploited Depth) in a Safe block (SOE = 52%)
-    deep_readings = pd.DataFrame([
-        {"station_id": "STN_DEEP_SAFE", "timestamp": base_time + pd.DateOffset(years=i), "water_level_m": 27.5}
-        for i in range(5)
-    ])
+    # Provide seasonal pre-monsoon (May) and post-monsoon (Nov) readings across 12 years
+    records_b = []
+    for yr in range(12):
+        records_b.append({"station_id": "STN_DEEP_SAFE", "timestamp": pd.Timestamp(f"{2010+yr}-05-15"), "water_level_m": 27.5})
+        records_b.append({"station_id": "STN_DEEP_SAFE", "timestamp": pd.Timestamp(f"{2010+yr}-11-15"), "water_level_m": 26.0})
+    deep_readings = pd.DataFrame(records_b)
     meta_b = {
         "station_id": "STN_DEEP_SAFE",
         "district": "Udupi",
@@ -214,6 +251,21 @@ def test_conflicting_depth_and_gec_indicators():
     assert res_b["depth_indicator"]["tier"] == "over_exploited"
     assert res_b["gec_assessment"]["category"] == "safe"
     assert res_b["depth_indicator"]["tier"] != res_b["gec_assessment"]["category"]
+
+    # Scenario C: Station with unmapped block returns unassessed for GEC-2015
+    records_c = []
+    for yr in range(12):
+        records_c.append({"station_id": "STN_UNMAPPED", "timestamp": pd.Timestamp(f"{2010+yr}-05-15"), "water_level_m": 27.5})
+    unmapped_readings = pd.DataFrame(records_c)
+    meta_c = {
+        "station_id": "STN_UNMAPPED",
+        "district": "Unknown",
+        "block": "",
+        "well_depth_m": 30.0,
+    }
+    res_c = evaluate_station(unmapped_readings, meta_c, stage_of_dev=52.0)
+    assert res_c["gec_assessment"]["category"] == "unassessed"
+    assert res_c["depth_indicator"]["tier"] == "over_exploited"
 
 
 def test_cadence_aware_depletion_rate_annual():
@@ -240,12 +292,14 @@ def test_cadence_aware_depletion_rate_annual():
     assert pytest.approx(depletion["annual_rate_m"], abs=0.01) == 0.100
     assert depletion["annual_rate_m"] < 1.0  # Guard against 3,504 m/yr multiplier bug!
     assert depletion["trend_direction"] == "depleting"
+    assert depletion["confidence"] == "high"
 
 
 def test_cadence_aware_depletion_rate_telemetry():
     """
     Test depletion-rate calculation on 15-minute DWLR telemetry.
     Detects sub_daily_telemetry cadence and scales via fractional years.
+    Guards against short duration and seasonal bias.
     """
     base_time = pd.Timestamp("2025-01-01 00:00:00")
     # 48 readings spaced 15 minutes apart (12 hours) with 0.05m drop
@@ -261,21 +315,65 @@ def test_cadence_aware_depletion_rate_telemetry():
     depletion = _compute_depletion_rate(df_telem)
     assert depletion["cadence"] == "sub_daily_telemetry"
     assert depletion["reading_count"] == 48
+    # Short duration (<90 days) must have low confidence and unadjusted sub-seasonal bias
+    assert depletion["confidence"] == "low"
+    assert depletion["seasonal_bias"] == "unadjusted_sub_seasonal_transient"
+    assert "autocorrelation_lag1" in depletion
 
 
-def test_years_to_depletion_illustrative_estimate():
+def test_years_to_depletion_suppressed_when_unverified():
     """
-    Verify years-to-depletion is flagged as illustrative estimate
-    with required scientific disclaimer when well depth is unmeasured.
+    Verify years-to-depletion is suppressed from primary results
+    unless verified drilled well depth and hydrogeology are present.
     """
-    res = _compute_years_to_depletion(current_level_m=12.0, well_depth_m=None, annual_depletion=0.5)
-    assert res["status"] == "illustrative_estimate"
-    assert res["is_illustrative"] is True
-    assert "Illustrative estimate only" in res["disclaimer"]
-    assert res["years"] is not None
-    assert res["years"] > 0
+    # Unverified well depth -> suppressed
+    res_unverified = _compute_years_to_depletion(
+        current_level_m=12.0, well_depth_m=50.0, annual_depletion=0.5, well_depth_verified=False
+    )
+    assert res_unverified["status"] == "suppressed_unverified_well_depth"
+    assert res_unverified["is_dependable_prediction"] is False
+    assert res_unverified["years"] is None
+    assert "suppressed" in res_unverified["disclaimer"].lower()
+
+    # Missing well depth -> suppressed
+    res_none = _compute_years_to_depletion(
+        current_level_m=12.0, well_depth_m=None, annual_depletion=0.5
+    )
+    assert res_none["status"] == "suppressed_unverified_well_depth"
+    assert res_none["years"] is None
+
+    # Verified drilled well depth and verified hydrogeology -> verified estimate
+    res_verified = _compute_years_to_depletion(
+        current_level_m=12.0, well_depth_m=50.0, annual_depletion=0.5, well_depth_verified=True, hydrogeology_verified=True
+    )
+    assert res_verified["status"] == "verified_hydrogeological_estimate"
+    assert res_verified["is_dependable_prediction"] is True
+    assert res_verified["years"] == round((50.0 - 12.0) / 0.5, 1)
 
     # Recovering water level -> None years
-    rec = _compute_years_to_depletion(current_level_m=12.0, well_depth_m=50.0, annual_depletion=-0.2)
+    rec = _compute_years_to_depletion(
+        current_level_m=12.0, well_depth_m=50.0, annual_depletion=-0.2, well_depth_verified=True, hydrogeology_verified=True
+    )
     assert rec["years"] is None
     assert rec["status"] == "stable_or_recovering"
+
+
+def test_resource_availability_index_heuristic_meta():
+    """Verify that RAI is documented as an exploratory unvalidated heuristic."""
+    base_time = pd.Timestamp("2010-01-01 00:00:00")
+    readings = pd.DataFrame([
+        {"station_id": "STN_RAI", "timestamp": base_time + pd.DateOffset(years=i), "water_level_m": 6.5}
+        for i in range(12)
+    ])
+    meta = {
+        "station_id": "STN_RAI",
+        "district": "Bangalore Urban",
+        "block": "Bangalore North",
+        "well_depth_m": 40.0,
+    }
+    res = evaluate_station(readings, meta, stage_of_dev=65.0)
+    assert "resource_availability_index_meta" in res
+    rai_meta = res["resource_availability_index_meta"]
+    assert rai_meta["scientific_status"] == "exploratory_unvalidated_heuristic"
+    assert rai_meta["is_statutory_cgwb_index"] is False
+    assert "NOT an official CGWB metric" in rai_meta["disclaimer"]

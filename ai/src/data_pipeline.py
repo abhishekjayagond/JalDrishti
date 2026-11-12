@@ -93,7 +93,7 @@ def build_station_features(clean: pd.DataFrame, nodes: pd.DataFrame, min_history
                 x[f"years_back_{lag}"] = float(target_year - hist_years[-lag])
             x["gwl_mean_4"] = float(np.mean(vals))
             x["gwl_std_4"] = float(np.std(vals))
-            x["gwl_slope_4"] = float(np.polyfit(np.arange(min_history), np.asarray(vals), 1)[0])
+            x["gwl_slope_4"] = float(np.polyfit(hist_years, np.asarray(vals), 1)[0])
             x["latitude"] = float(node_lookup.loc[sid, "latitude"])
             x["longitude"] = float(node_lookup.loc[sid, "longitude"])
             rows.append(x)

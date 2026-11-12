@@ -84,7 +84,7 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
         "years_back_4": float(forecast_year - prior_years[-4]),
         "gwl_mean_4": float(np.mean(last4)),
         "gwl_std_4": float(np.std(last4)),
-        "gwl_slope_4": float(np.polyfit(np.arange(4), np.asarray(last4), 1)[0]),
+        "gwl_slope_4": float(np.polyfit(prior_years, np.asarray(last4), 1)[0]),
     }])
 
     pred1 = float(model.predict(feat1[FEATURES])[0])
@@ -96,6 +96,7 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
     # Multi-year recursive forecast projections (h=1, h=2, h=3)
     # At h=2, pred1 is used as lag_1
     last4_h2 = [last4[-3], last4[-2], last4[-1], pred1]
+    years_h2 = [prior_years[-3], prior_years[-2], prior_years[-1], forecast_year]
     feat2 = pd.DataFrame([{
         "latitude": float(row.iloc[0].latitude),
         "longitude": float(row.iloc[0].longitude),
@@ -109,12 +110,13 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
         "years_back_4": float(forecast_year + 1 - prior_years[-3]),
         "gwl_mean_4": float(np.mean(last4_h2)),
         "gwl_std_4": float(np.std(last4_h2)),
-        "gwl_slope_4": float(np.polyfit(np.arange(4), np.asarray(last4_h2), 1)[0]),
+        "gwl_slope_4": float(np.polyfit(years_h2, np.asarray(last4_h2), 1)[0]),
     }])
     pred2 = float(model.predict(feat2[FEATURES])[0])
 
     # At h=3, pred2 is lag_1, pred1 is lag_2
     last4_h3 = [last4[-2], last4[-1], pred1, pred2]
+    years_h3 = [prior_years[-2], prior_years[-1], forecast_year, forecast_year + 1]
     feat3 = pd.DataFrame([{
         "latitude": float(row.iloc[0].latitude),
         "longitude": float(row.iloc[0].longitude),
@@ -128,15 +130,15 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
         "years_back_4": float(forecast_year + 2 - prior_years[-2]),
         "gwl_mean_4": float(np.mean(last4_h3)),
         "gwl_std_4": float(np.std(last4_h3)),
-        "gwl_slope_4": float(np.polyfit(np.arange(4), np.asarray(last4_h3), 1)[0]),
+        "gwl_slope_4": float(np.polyfit(years_h3, np.asarray(last4_h3), 1)[0]),
     }])
     pred3 = float(model.predict(feat3[FEATURES])[0])
 
-    # Compounding uncertainty radius for multi-year horizons
-    # Horizon 2 compounds by approx 1.15x; Horizon 3 by 1.30x
-    r2 = round(radius * 1.15, 3) if radius is not None else None
-    r3 = round(radius * 1.30, 3) if radius is not None else None
-
+    # Multi-horizon projections:
+    # Target 2026 is a retrospective estimate (pre-monsoon 2026 has already passed relative to Nov 12, 2026).
+    # True future projections commence in 2027 and 2028.
+    # Conformal calibration guarantees hold strictly for 1-step rolling predictions.
+    # Multi-year recursive horizons (h=2, 3) report uncertainty as unavailable rather than applying arbitrary multipliers.
     multi_year_projections = [
         {
             "horizon_years": 1,
@@ -145,29 +147,41 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
             "lower_mbgl": round(lower1, 3) if lower1 is not None else None,
             "upper_mbgl": round(upper1, 3) if upper1 is not None else None,
             "uncertainty_radius_mbgl": round(radius, 3) if radius is not None else None,
+            "uncertainty_status": "calibrated_conformal_interval" if radius is not None else "unavailable",
+            "coverage_guarantee": "single_step_calibrated_split_conformal",
             "risk": status1,
             "forecast_type": "1_year_rolling_forecast",
+            "temporal_classification": "retrospective_estimate" if forecast_year <= 2026 else "future_projection",
+            "is_future_forecast": forecast_year > 2026,
         },
         {
             "horizon_years": 2,
             "target_year": forecast_year + 1,
             "predicted_depth_mbgl": round(pred2, 3),
-            "lower_mbgl": round(pred2 - r2, 3) if r2 is not None else None,
-            "upper_mbgl": round(pred2 + r2, 3) if r2 is not None else None,
-            "uncertainty_radius_mbgl": r2,
+            "lower_mbgl": None,
+            "upper_mbgl": None,
+            "uncertainty_radius_mbgl": None,
+            "uncertainty_status": "unavailable",
+            "uncertainty_note": "Multi-year recursive conformal calibration is unavailable; 1-step calibration does not provide valid coverage under recursive feedback.",
             "risk": classify_gwl_depth(pred2),
             "forecast_type": "2_year_recursive_forecast",
+            "temporal_classification": "future_projection" if (forecast_year + 1) > 2026 else "retrospective_estimate",
+            "is_future_forecast": (forecast_year + 1) > 2026,
             "error_compounding_note": "Autoregressive error compounds from 1-year recursive feedback.",
         },
         {
             "horizon_years": 3,
             "target_year": forecast_year + 2,
             "predicted_depth_mbgl": round(pred3, 3),
-            "lower_mbgl": round(pred3 - r3, 3) if r3 is not None else None,
-            "upper_mbgl": round(pred3 + r3, 3) if r3 is not None else None,
-            "uncertainty_radius_mbgl": r3,
+            "lower_mbgl": None,
+            "upper_mbgl": None,
+            "uncertainty_radius_mbgl": None,
+            "uncertainty_status": "unavailable",
+            "uncertainty_note": "Multi-year recursive conformal calibration is unavailable; 1-step calibration does not provide valid coverage under recursive feedback.",
             "risk": classify_gwl_depth(pred3),
             "forecast_type": "3_year_recursive_forecast",
+            "temporal_classification": "future_projection" if (forecast_year + 2) > 2026 else "retrospective_estimate",
+            "is_future_forecast": (forecast_year + 2) > 2026,
             "error_compounding_note": "Autoregressive error compounds from multi-year recursive feedback.",
         },
     ]
@@ -180,13 +194,21 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
         "lower_mbgl": round(lower1, 3) if lower1 is not None else None,
         "upper_mbgl": round(upper1, 3) if upper1 is not None else None,
         "uncertainty_radius_mbgl": round(radius, 4) if radius is not None else None,
+        "uncertainty_status": "calibrated_conformal_interval" if radius is not None else "unavailable",
         "interval_method": validation_band.get("method", "split_conformal_inference"),
         "interval_empirical_coverage": validation_band.get("test_empirical_coverage_overall"),
         "interval_note": validation_band.get("exchangeability_assumptions_and_limitations"),
+        "temporal_classification": "retrospective_estimate" if forecast_year <= 2026 else "future_projection",
+        "is_future_forecast": forecast_year > 2026,
+        "temporal_note": (
+            "Pre-monsoon 2026 occurred in April-May 2026 prior to current date (November 12, 2026). "
+            "Target year 2026 is evaluated as a retrospective estimate / hindcast. True future projections commence in 2027."
+            if forecast_year <= 2026 else "Future pre-monsoon projection."
+        ),
         "risk": status1,
-        "risk_rule_note": "Exploratory groundwater depth indicator (<8m: Safe depth, 8–<15m: Semi-Critical depth, 15–25m: Critical depth, >25m: Over-Exploited depth). Note: Official CGWB/GEC-2015 assessment requires assessment-unit extraction and recharge accounting.",
+        "risk_rule_note": "Exploratory groundwater depth indicator (<8m: Safe depth, 8–<15m: Semi-Critical depth, 15–25m: Critical depth, >25m: Over-Exploited depth). Note: Official CGWB/GEC-2015 assessment requires administrative assessment-unit extraction and recharge accounting.",
         "assessment_type": "exploratory_depth_tier",
-        "model": "production_linear_regression",
+        "model": "calibrated_linear_regression",
         "forecast_horizon_years": 1,
         "forecast_type": "1_year_rolling_forecast",
         "frequency": "annual_pre_monsoon",
@@ -217,11 +239,13 @@ def _load() -> None:
     else:
         horizons_info = {}
 
-    # Load dedicated production model artifact (trained on all historical observations)
-    if PRODUCTION_MODEL.exists():
-        model = joblib.load(PRODUCTION_MODEL)
-    elif LR_MODEL.exists():
+    # Load calibrated linear regression model artifact
+    # Using LR_MODEL (linear_regression.joblib) ensures exact alignment with the published
+    # conformal prediction intervals and reported test metrics (zero model mismatch).
+    if LR_MODEL.exists():
         model = joblib.load(LR_MODEL)
+    elif PRODUCTION_MODEL.exists():
+        model = joblib.load(PRODUCTION_MODEL)
     else:
         raise RuntimeError("No trained model found. Run ai/src/train.py first.")
 
@@ -267,7 +291,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "stations": int(len(nodes)),
-        "model": "production_linear_regression",
+        "model": "calibrated_linear_regression",
         "frequency": "annual_pre_monsoon",
         "forecast_horizon": "1_year_ahead_rolling",
         "precomputed_forecasts": int(len(all_forecasts)),

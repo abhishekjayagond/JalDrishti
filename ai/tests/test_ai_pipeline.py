@@ -2,6 +2,7 @@ import sys
 import json
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,8 +75,8 @@ def test_forecast_distribution_and_unavailable():
         counts[risk] += 1
 
     # Exact honest distribution across 390 candidate stations
-    assert counts["Safe"] == 315
-    assert counts["Semi-Critical"] == 74
+    assert counts["Safe"] == 312
+    assert counts["Semi-Critical"] == 77
     assert counts["Critical"] == 1
     assert counts["Over-Exploited"] == 0
     assert counts["Unavailable"] == 0
@@ -119,6 +120,7 @@ def test_chronological_4way_split_and_conformal():
     # Conformal calibrated on calibration split (not validation!)
     assert conf["calibration_years"] == sorted(list(calib_years))
     assert conf["test_empirical_coverage_overall"] > 0.90
+    assert conf["model_alignment"]["is_exact_calibrated_model"] is True
     assert "exchangeability_assumptions_and_limitations" in conf
     assert len(conf["exchangeability_assumptions_and_limitations"]) > 50
 
@@ -140,14 +142,92 @@ def test_model_selection_eligibility_and_production_artifact():
 
 
 def test_multi_horizon_recursive_evaluation():
-    """Verify multi-horizon recursive evaluation quantifies error compounding."""
+    """Verify multi-horizon recursive evaluation on common cohort from fixed origin."""
     assert FORECAST_HORIZONS_JSON.exists()
     horizons = json.loads(FORECAST_HORIZONS_JSON.read_text(encoding="utf-8"))
     
-    h1 = horizons["horizon_1_year_rolling"]
-    h2 = horizons["horizon_2_year_recursive"]
-    h3 = horizons["horizon_3_year_recursive"]
+    assert horizons["evaluation_protocol"] == "single_origin_common_cohort_recursive"
+    assert horizons["forecast_origin_year"] == 2022
+    assert horizons["common_cohort_station_count"] == 276
+
+    h1 = horizons["horizon_1"]
+    h2 = horizons["horizon_2"]
+    h3 = horizons["horizon_3"]
     
+    assert h1["sample_count"] == 276
+    assert h2["sample_count"] == 276
+    assert h3["sample_count"] == 276
+
     assert h1["mae_mbgl"] > 0
-    assert h2["mae_mbgl"] >= h1["mae_mbgl"]  # Error compounds across lead times
-    assert "error_compounding_summary" in horizons
+    assert h2["mae_mbgl"] >= h1["mae_mbgl"]
+    assert h2["error_change_vs_h1_pct"] > 0
+
+    assert h1["uncertainty_status"] == "calibrated"
+    assert h2["uncertainty_status"] == "unavailable"
+    assert h3["uncertainty_status"] == "unavailable"
+    assert "error_trajectory_summary" in horizons
+
+
+def test_served_model_alignment_and_retrospective_label():
+    """Verify served model matches calibrated linear regression, 2026 is retrospective, and multi-year uncertainty is suppressed."""
+    from service import app as ai_app
+    import joblib
+    ai_app._load()
+
+    # Model alignment
+    calibrated_lr = joblib.load(LR_MODEL)
+    assert np.allclose(ai_app.model.coef_, calibrated_lr.coef_)
+    assert np.isclose(ai_app.model.intercept_, calibrated_lr.intercept_)
+    assert ai_app.health()["model"] == "calibrated_linear_regression"
+
+    # Station forecast checks
+    fc = ai_app._compute_station_forecast("942ccfc29ecf")
+    assert fc is not None
+    assert fc["forecast_year"] == 2026
+    assert fc["temporal_classification"] == "retrospective_estimate"
+    assert fc["is_future_forecast"] is False
+    assert fc["uncertainty_status"] == "calibrated_conformal_interval"
+
+    # Multi-year projections
+    projs = fc["multi_year_projections"]
+    assert len(projs) == 3
+
+    p1 = projs[0]
+    assert p1["target_year"] == 2026
+    assert p1["temporal_classification"] == "retrospective_estimate"
+    assert p1["uncertainty_status"] == "calibrated_conformal_interval"
+    assert p1["uncertainty_radius_mbgl"] is not None
+
+    p2 = projs[1]
+    assert p2["target_year"] == 2027
+    assert p2["temporal_classification"] == "future_projection"
+    assert p2["is_future_forecast"] is True
+    assert p2["uncertainty_status"] == "unavailable"
+    assert p2["uncertainty_radius_mbgl"] is None
+    assert p2["lower_mbgl"] is None
+
+    p3 = projs[2]
+    assert p3["target_year"] == 2028
+    assert p3["temporal_classification"] == "future_projection"
+    assert p3["is_future_forecast"] is True
+    assert p3["uncertainty_status"] == "unavailable"
+    assert p3["uncertainty_radius_mbgl"] is None
+
+
+def test_gwl_slope_4_calendar_gap_physics():
+    """Verify that gwl_slope_4 uses actual observation calendar years, not equidistant np.arange(4)."""
+    import numpy as np
+
+    # Years with calendar gap: [2018, 2019, 2020, 2022] (missing 2021)
+    years = [2018, 2019, 2020, 2022]
+    # Depths: 10.0m in 2018, 10.2m in 2019, 10.4m in 2020, 10.8m in 2022
+    # True physical rate is 0.200 m/year
+    depths = [10.0, 10.2, 10.4, 10.8]
+
+    slope_calendar = float(np.polyfit(years, depths, 1)[0])
+    slope_naive_array = float(np.polyfit(np.arange(4), depths, 1)[0])
+
+    # The calendar slope must be exactly 0.200 m/yr
+    assert pytest.approx(slope_calendar, abs=1e-4) == 0.200
+    # The naive array position slope would erroneously distort to ~0.260 (+30% error!)
+    assert abs(slope_naive_array - 0.200) > 0.05

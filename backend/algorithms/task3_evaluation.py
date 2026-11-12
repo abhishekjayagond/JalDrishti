@@ -5,22 +5,23 @@ Task 3: Evaluate Groundwater Resources, Point-Level Depth Tiers & GEC-2015 Categ
 Computes:
   - Exploratory point-level groundwater depth indicator tier:
       Safe Depth (<8m), Semi-Critical Depth (8–<15m), Critical Depth (15–25m), Over-Exploited Depth (>25m)
-  - Statutory CGWB GEC-2015 Assessment-Unit Classification (Safe, Semi-Critical, Critical, Over-Exploited)
-    based on Stage of Groundwater Extraction (SOE) and decadal pre/post-monsoon water level trends.
-  - Cadence-aware annual depletion rates using exact timestamps (supports annual CGWB historical & 15-min DWLR telemetry)
-  - Illustrative years to depletion per station (with explicit scientific disclaimers on unmeasured well depths)
-  - District and state-level resource scorecards
-  - Resource Availability Index (RAI)
+  - Statutory CGWB GEC-2015 Administrative Assessment-Unit Classification (Safe, Semi-Critical, Critical, Over-Exploited, Unassessed)
+    applied strictly at the taluk/block/mandal administrative level based on Stage of Groundwater Extraction (SOE)
+    and verified 10-year pre/post-monsoon water level trend evidence.
+  - Cadence-aware annual depletion rates using exact timestamps, timespan duration, autocorrelation, and seasonal bias guards.
+  - Depletion horizon estimation (suppressed from primary results unless verified drilled-well & hydrogeological data exist).
+  - Exploratory Resource Availability Index (RAI) clearly documented as an unvalidated heuristic scoring model.
+  - District and state-level resource scorecards.
 
 METHODOLOGICAL SEPARATION (Statutory CGWB/GEC-2015 vs. Point-Level Depth Tiers):
   1. Statutory CGWB GEC-2015 Categorization:
      Evaluates administrative assessment units (taluks/blocks/watersheds) using volumetric
      Stage of Groundwater Extraction (SOE = Total Annual Extraction / Annual Extractable Recharge * 100%)
-     and long-term (10-year) pre-monsoon and post-monsoon water table decline trends.
+     and verified long-term (10-year) pre-monsoon and post-monsoon water table decline trends.
+     Individual monitoring wells are NEVER classified as officially assessed blocks.
   2. Point-Level Depth Indicator Tier:
      Point-level depth-to-water categories (<8m, 8–15m, 15–25m, >25m) used strictly as operational
-     field screening indicators. Point depths must NEVER be merged into GEC-2015 categories or labeled
-     as official block assessments.
+     field screening indicators.
 """
 
 import logging
@@ -44,6 +45,9 @@ GEC_SEMI_CRITICAL_STAGE_MAX =  90.0
 GEC_CRITICAL_STAGE_MAX      = 100.0
 # > 100.0% = Over-Exploited Stage of Extraction
 
+# Statutory GEC-2015 requires at least 10 years of pre/post-monsoon observation
+MIN_DECADAL_TREND_YEARS = 10
+
 # Minimum readings required for cadence-aware regression
 MIN_READINGS_TELEMETRY = 24
 MIN_READINGS_ANNUAL    = 3
@@ -54,6 +58,7 @@ STATUS_CONFIG = {
     "semi_critical":  {"label": "Semi-Critical",  "color": "#F39C12", "priority": 2},
     "critical":       {"label": "Critical",        "color": "#E74C3C", "priority": 3},
     "over_exploited": {"label": "Over-Exploited",  "color": "#2C3E50", "priority": 4},
+    "unassessed":     {"label": "Unassessed",      "color": "#95A5A6", "priority": 0},
     "unknown":        {"label": "Unknown",          "color": "#95A5A6", "priority": 0},
 }
 
@@ -140,17 +145,25 @@ def classify_depth_tier(current_level_m: Optional[float]) -> Dict[str, Any]:
 
 def classify_gec2015_assessment_unit(
     stage_of_extraction_pct: Optional[float],
-    pre_monsoon_trend_decline: bool = False,
-    post_monsoon_trend_decline: bool = False,
+    pre_monsoon_trend_decline: Optional[bool] = None,
+    post_monsoon_trend_decline: Optional[bool] = None,
     assessment_unit: Optional[str] = None,
+    trend_years_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Statutory CGWB GEC-2015 Assessment-Unit Categorization Matrix.
 
     Evaluates administrative assessment units (Taluk / Block / Mandal / Watershed)
-    based on:
-      - Stage of Groundwater Extraction (SOE) = (Existing Gross Draft / Annual Extractable Resource) * 100%
-      - Long-term (10-year) pre-monsoon and post-monsoon water level trends.
+    strictly at the administrative unit level, NEVER on individual monitoring wells.
+
+    Requires:
+      1. Valid administrative assessment unit name (e.g., taluk or block).
+      2. Valid assessment-unit Stage of Groundwater Extraction (SOE):
+         SOE = (Existing Gross Draft for All Uses / Annual Extractable Resource) * 100%
+      3. Statutory 10-year pre-monsoon and post-monsoon water level trend evidence.
+
+    Where extraction data, assessment unit, or required 10-year trend evidence is
+    missing or insufficient, returns category='unassessed'.
 
     Decision Rules (CGWB GEC-2015):
       1. SOE <= 70%:
@@ -167,11 +180,37 @@ def classify_gec2015_assessment_unit(
     Returns:
         Structured dict with category, label, SOE, trend flags, and statutory rationale.
     """
+    # Guard 1: Must be an administrative assessment unit, not an unmapped well
+    if (
+        assessment_unit is None
+        or not str(assessment_unit).strip()
+        or str(assessment_unit).strip().lower() in ("unknown", "none", "unassigned", "")
+    ):
+        return {
+            "category": "unassessed",
+            "category_label": "Unassessed",
+            "stage_of_extraction_pct": None,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+            "assessment_unit": None,
+            "framework": "CGWB GEC-2015 Methodology",
+            "statutory_scope": "administrative_assessment_unit",
+            "rationale": (
+                "Unassessed: Statutory GEC-2015 assessments apply exclusively to administrative assessment "
+                "units (taluks/blocks/watersheds). No valid administrative assessment unit was specified. "
+                "Individual monitoring wells cannot be classified as official blocks."
+            ),
+        }
+
+    unit_name = str(assessment_unit).strip()
+
+    # Guard 2: Must have valid volumetric Stage of Groundwater Extraction (SOE)
     if (
         stage_of_extraction_pct is None
         or not isinstance(stage_of_extraction_pct, (int, float))
         or np.isnan(stage_of_extraction_pct)
         or not np.isfinite(stage_of_extraction_pct)
+        or float(stage_of_extraction_pct) <= 0.0
     ):
         return {
             "category": "unassessed",
@@ -179,48 +218,105 @@ def classify_gec2015_assessment_unit(
             "stage_of_extraction_pct": None,
             "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
             "post_monsoon_trend_decline": post_monsoon_trend_decline,
-            "assessment_unit": assessment_unit,
+            "assessment_unit": unit_name,
             "framework": "CGWB GEC-2015 Methodology",
-            "rationale": "Assessment-unit stage of groundwater extraction (SOE) data not provided.",
+            "statutory_scope": "administrative_assessment_unit",
+            "rationale": (
+                f"Unassessed for {unit_name}: Valid assessment-unit Stage of Groundwater Extraction (SOE) "
+                "data is unavailable. GEC-2015 categorization requires volumetric gross draft and "
+                "annual extractable resource accounting."
+            ),
         }
 
     soe = float(stage_of_extraction_pct)
 
+    # Guard 3: Required 10-year decadal trend evidence for statutory assessment
+    has_trend_evidence = (
+        pre_monsoon_trend_decline is not None
+        and post_monsoon_trend_decline is not None
+        and (trend_years_count is None or trend_years_count >= MIN_DECADAL_TREND_YEARS)
+    )
+
+    # For SOE > 100%, extraction exceeds recharge (Over-Exploited draft pressure)
+    if soe > GEC_CRITICAL_STAGE_MAX:
+        category = "over_exploited"
+        category_label = "Over-Exploited"
+        trend_note = (
+            f" (Verified with {trend_years_count} years of decadal trends)"
+            if trend_years_count and trend_years_count >= MIN_DECADAL_TREND_YEARS
+            else " (Note: Statutory 10-year trend series is incomplete or provisional)"
+        )
+        rationale = f"SOE exceeds 100% ({soe:.1f}%); groundwater draft exceeds annual extractable recharge.{trend_note}"
+        return {
+            "category": category,
+            "category_label": category_label,
+            "stage_of_extraction_pct": round(soe, 2),
+            "pre_monsoon_trend_decline": bool(pre_monsoon_trend_decline) if pre_monsoon_trend_decline is not None else None,
+            "post_monsoon_trend_decline": bool(post_monsoon_trend_decline) if post_monsoon_trend_decline is not None else None,
+            "assessment_unit": unit_name,
+            "trend_years_count": trend_years_count,
+            "framework": "CGWB GEC-2015 Methodology",
+            "statutory_scope": "administrative_assessment_unit",
+            "rationale": rationale,
+        }
+
+    # For SOE <= 100%, statutory categorization between Safe, Semi-Critical, and Critical
+    # strictly requires verified 10-year pre/post monsoon trend evidence.
+    if not has_trend_evidence:
+        return {
+            "category": "unassessed",
+            "category_label": "Unassessed",
+            "stage_of_extraction_pct": round(soe, 2),
+            "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
+            "post_monsoon_trend_decline": post_monsoon_trend_decline,
+            "assessment_unit": unit_name,
+            "trend_years_count": trend_years_count,
+            "framework": "CGWB GEC-2015 Methodology",
+            "statutory_scope": "administrative_assessment_unit",
+            "rationale": (
+                f"Unassessed for {unit_name}: Insufficient statutory trend evidence. GEC-2015 categorization "
+                f"for SOE <= 100% strictly requires verified 10-year pre- and post-monsoon water level trend data. "
+                f"Available trend record: {trend_years_count or 0} years (minimum required: {MIN_DECADAL_TREND_YEARS} years)."
+            ),
+        }
+
+    # Evaluate with verified 10-year trend evidence
+    pre_dec = bool(pre_monsoon_trend_decline)
+    post_dec = bool(post_monsoon_trend_decline)
+
     if soe <= GEC_SAFE_STAGE_MAX:
-        if pre_monsoon_trend_decline and post_monsoon_trend_decline:
+        if pre_dec and post_dec:
             category = "semi_critical"
             category_label = "Semi-Critical"
-            rationale = "SOE <= 70% but significant decline observed in both pre- and post-monsoon decadal trends."
+            rationale = f"SOE <= 70% ({soe:.1f}%) in {unit_name}, but significant decline observed in both pre- and post-monsoon 10-year trends."
         else:
             category = "safe"
             category_label = "Safe"
-            rationale = "SOE <= 70% with no significant dual decadal trend decline."
+            rationale = f"SOE <= 70% ({soe:.1f}%) in {unit_name} with no significant dual decadal trend decline."
     elif soe <= GEC_SEMI_CRITICAL_STAGE_MAX:
         category = "semi_critical"
         category_label = "Semi-Critical"
-        rationale = "SOE between 70% and 90%."
-    elif soe <= GEC_CRITICAL_STAGE_MAX:
-        if pre_monsoon_trend_decline or post_monsoon_trend_decline:
+        rationale = f"SOE between 70% and 90% ({soe:.1f}%) in {unit_name}."
+    else:  # 90% < SOE <= 100%
+        if pre_dec or post_dec:
             category = "critical"
             category_label = "Critical"
-            rationale = "SOE between 90% and 100% with significant decadal trend decline."
+            rationale = f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} with significant decadal trend decline."
         else:
             category = "semi_critical"
             category_label = "Semi-Critical"
-            rationale = "SOE between 90% and 100% without significant decadal trend decline."
-    else:
-        category = "over_exploited"
-        category_label = "Over-Exploited"
-        rationale = f"SOE exceeds 100% ({soe:.1f}%); groundwater draft exceeds annual extractable recharge."
+            rationale = f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} without significant decadal trend decline."
 
     return {
         "category": category,
         "category_label": category_label,
         "stage_of_extraction_pct": round(soe, 2),
-        "pre_monsoon_trend_decline": bool(pre_monsoon_trend_decline),
-        "post_monsoon_trend_decline": bool(post_monsoon_trend_decline),
-        "assessment_unit": assessment_unit,
+        "pre_monsoon_trend_decline": pre_dec,
+        "post_monsoon_trend_decline": post_dec,
+        "assessment_unit": unit_name,
+        "trend_years_count": trend_years_count,
         "framework": "CGWB GEC-2015 Methodology",
+        "statutory_scope": "administrative_assessment_unit",
         "rationale": rationale,
     }
 
@@ -239,7 +335,7 @@ def _classify_status(
 
 
 # ═══════════════════════════════════════════════════════════════
-# 3. CADENCE-AWARE DEPLETION RATE CALCULATION
+# 3. CADENCE-AWARE DEPLETION RATE & STATISTICAL CONFIDENCE
 # ═══════════════════════════════════════════════════════════════
 
 def _compute_depletion_rate(df: pd.DataFrame) -> Dict[str, Any]:
@@ -252,18 +348,24 @@ def _compute_depletion_rate(df: pd.DataFrame) -> Dict[str, Any]:
 
     Converts timestamps directly into elapsed time in fractional years:
       t_years = (timestamp - timestamp_0) / (365.25 * 86400)
-    The regression slope (polyfit) directly yields metres per year (m/yr).
-    NO arbitrary '365 * 96' multiplier is applied to annual data.
+    The regression slope directly yields metres per year (m/yr).
 
-    Positive rate = water level deepening (depletion).
-    Negative rate = water level rising (recovery).
+    STATISTICAL CONFIDENCE & SEASONAL GUARDS:
+      - Sub-daily telemetry exhibits heavy serial autocorrelation and diurnal/pumping cycles.
+      - Short duration (<90 days) captures transient weather/pumping drawdown rather than secular depletion.
+      - Unadjusted sub-annual telemetry (<365 days) is flagged for seasonal bias and assigned low/medium confidence.
+      - Annual historical data requires >=15 years for high confidence, >=7 years for medium confidence.
     """
     if df is None or df.empty or "timestamp" not in df.columns or "water_level_m" not in df.columns:
         return {
             "annual_rate_m": 0.0,
             "confidence": "low",
+            "confidence_rationale": "No observation records available.",
+            "seasonal_bias": "unassessed",
+            "autocorrelation_lag1": 0.0,
             "cadence": "no_data",
             "timespan_years": 0.0,
+            "timespan_days": 0.0,
             "reading_count": 0,
             "r_squared": 0.0,
             "trend_direction": "stable",
@@ -274,8 +376,12 @@ def _compute_depletion_rate(df: pd.DataFrame) -> Dict[str, Any]:
         return {
             "annual_rate_m": 0.0,
             "confidence": "low",
+            "confidence_rationale": "Fewer than 2 observation records.",
+            "seasonal_bias": "unassessed",
+            "autocorrelation_lag1": 0.0,
             "cadence": "insufficient_data",
             "timespan_years": 0.0,
+            "timespan_days": 0.0,
             "reading_count": len(clean_df),
             "r_squared": 0.0,
             "trend_direction": "stable",
@@ -286,10 +392,7 @@ def _compute_depletion_rate(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Detect cadence via median inter-arrival time
     time_deltas = clean_df["timestamp"].diff().dropna()
-    if time_deltas.empty:
-        median_delta = pd.Timedelta(days=365)
-    else:
-        median_delta = time_deltas.median()
+    median_delta = time_deltas.median() if not time_deltas.empty else pd.Timedelta(days=365)
 
     if median_delta < pd.Timedelta(hours=2):
         cadence = "sub_daily_telemetry"
@@ -304,29 +407,21 @@ def _compute_depletion_rate(df: pd.DataFrame) -> Dict[str, Any]:
         cadence = "annual_historical"
         min_required = MIN_READINGS_ANNUAL
 
-    if len(clean_df) < min_required:
-        return {
-            "annual_rate_m": 0.0,
-            "confidence": "low",
-            "cadence": cadence,
-            "timespan_years": 0.0,
-            "reading_count": len(clean_df),
-            "r_squared": 0.0,
-            "trend_direction": "stable",
-        }
-
-    # Elapsed time in fractional years
     t0 = clean_df["timestamp"].iloc[0]
     total_seconds = (clean_df["timestamp"] - t0).dt.total_seconds().values
+    total_span_days = float(total_seconds[-1] / 86400.0)
     total_span_years = float(total_seconds[-1] / (365.25 * 86400.0))
 
-    if total_span_years < 1e-4:
-        # Avoid division by zero on identical timestamps
+    if len(clean_df) < min_required or total_span_days < 0.1:
         return {
             "annual_rate_m": 0.0,
             "confidence": "low",
+            "confidence_rationale": f"Insufficient sample size ({len(clean_df)} readings) for cadence {cadence}.",
+            "seasonal_bias": "insufficient_duration",
+            "autocorrelation_lag1": 0.0,
             "cadence": cadence,
-            "timespan_years": 0.0,
+            "timespan_years": round(total_span_years, 2),
+            "timespan_days": round(total_span_days, 1),
             "reading_count": len(clean_df),
             "r_squared": 0.0,
             "trend_direction": "stable",
@@ -345,11 +440,61 @@ def _compute_depletion_rate(df: pd.DataFrame) -> Dict[str, Any]:
     r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 1e-8 else 0.0
     r_squared = float(max(0.0, min(1.0, r_squared)))
 
-    # Determine confidence based on observation history and fit quality
-    if cadence == "annual_historical":
-        confidence = "high" if (len(clean_df) >= 15 and total_span_years >= 15) else "medium" if len(clean_df) >= 7 else "low"
+    # Compute lag-1 serial autocorrelation
+    if len(y) > 2:
+        y_dev = y - np.mean(y)
+        denom = np.sum(y_dev ** 2)
+        autocorr_lag1 = float(np.sum(y_dev[1:] * y_dev[:-1]) / denom) if denom > 1e-8 else 0.0
+        autocorr_lag1 = float(max(-1.0, min(1.0, autocorr_lag1)))
     else:
-        confidence = "high" if len(clean_df) >= 500 else "medium" if len(clean_df) >= 100 else "low"
+        autocorr_lag1 = 0.0
+
+    # Determine confidence based on observation duration, cadence, autocorrelation, and seasonal completeness
+    if cadence == "sub_daily_telemetry":
+        if total_span_days < 90.0:
+            confidence = "low"
+            confidence_rationale = (
+                f"Short telemetry duration ({total_span_days:.1f} days) captures transient pumping drawdown / storm infiltration "
+                f"rather than secular depletion. High serial autocorrelation (r={autocorr_lag1:.2f}) limits effective sample size."
+            )
+            seasonal_bias = "unadjusted_sub_seasonal_transient"
+        elif total_span_days < 365.0:
+            confidence = "low_to_medium"
+            confidence_rationale = (
+                f"Telemetry duration ({total_span_days:.1f} days) covers an incomplete seasonal cycle (<365 days). "
+                "Unadjusted linear slope reflects intra-annual monsoon/dry-season cycle rather than long-term secular depletion."
+            )
+            seasonal_bias = "partial_annual_cycle"
+        else:
+            confidence = "high" if (len(clean_df) >= 2000 and r_squared >= 0.3) else "medium"
+            confidence_rationale = f"Telemetry record spans {total_span_years:.2f} years, covering complete annual hydrologic cycles."
+            seasonal_bias = "complete_annual_cycles"
+    elif cadence in ("seasonal_monitoring", "daily_to_weekly"):
+        if total_span_years < 3.0:
+            confidence = "low"
+            confidence_rationale = f"Timespan ({total_span_years:.1f} years) is too brief to distinguish secular trend from climate variability."
+            seasonal_bias = "insufficient_multi_year_baseline"
+        elif total_span_years < 7.0:
+            confidence = "medium"
+            confidence_rationale = f"Moderate monitoring baseline ({total_span_years:.1f} years)."
+            seasonal_bias = "moderate_baseline"
+        else:
+            confidence = "high"
+            confidence_rationale = f"Decadal monitoring baseline ({total_span_years:.1f} years)."
+            seasonal_bias = "long_term_baseline"
+    else:  # annual_historical
+        if total_span_years < 7.0 or len(clean_df) < 7:
+            confidence = "low"
+            confidence_rationale = f"Fewer than 7 annual observations ({len(clean_df)} obs across {total_span_years:.1f} years)."
+            seasonal_bias = "limited_historical_depth"
+        elif total_span_years < 15.0 or len(clean_df) < 15:
+            confidence = "medium"
+            confidence_rationale = f"Adequate baseline ({len(clean_df)} annual observations across {total_span_years:.1f} years)."
+            seasonal_bias = "adequate_historical_depth"
+        else:
+            confidence = "high"
+            confidence_rationale = f"Decadal historical baseline ({len(clean_df)} annual observations across {total_span_years:.1f} years)."
+            seasonal_bias = "decadal_historical_depth"
 
     annual_rate = round(float(slope), 3)
 
@@ -361,79 +506,92 @@ def _compute_depletion_rate(df: pd.DataFrame) -> Dict[str, Any]:
         trend_direction = "stable"
 
     return {
-        "annual_rate_m":   annual_rate,
-        "confidence":      confidence,
-        "cadence":         cadence,
-        "timespan_years":  round(total_span_years, 2),
-        "reading_count":   len(clean_df),
-        "r_squared":       round(r_squared, 3),
-        "trend_direction": trend_direction,
+        "annual_rate_m":         annual_rate,
+        "confidence":            confidence,
+        "confidence_rationale":  confidence_rationale,
+        "seasonal_bias":         seasonal_bias,
+        "autocorrelation_lag1":  round(autocorr_lag1, 3),
+        "cadence":               cadence,
+        "timespan_years":        round(total_span_years, 2),
+        "timespan_days":         round(total_span_days, 1),
+        "reading_count":         len(clean_df),
+        "r_squared":             round(r_squared, 3),
+        "trend_direction":       trend_direction,
     }
 
 
 # ═══════════════════════════════════════════════════════════════
-# 4. YEARS TO DEPLETION (WITH SCIENTIFIC DISCLAIMER)
+# 4. YEARS TO DEPLETION (REQUIRING VERIFIED HYDROGEOLOGY)
 # ═══════════════════════════════════════════════════════════════
 
 def _compute_years_to_depletion(
-    current_level_m:   Optional[float],
-    well_depth_m:      Optional[float],
-    annual_depletion:  float,
+    current_level_m:        Optional[float],
+    well_depth_m:           Optional[float],
+    annual_depletion:       float,
+    well_depth_verified:    bool = False,
+    hydrogeology_verified:  bool = False,
 ) -> Dict[str, Any]:
     """
-    Estimate years until the water table reaches estimated aquifer/well threshold.
+    Estimate years until the water table reaches verified well/aquifer bottom.
 
-    METHODOLOGICAL NOTE:
-      In many DWLR monitoring stations, total drilled depth is estimated or heuristic
-      (e.g., 1.35 * max observed water depth) rather than lithologically measured.
-      Consequently, depletion horizons are strictly illustrative screening projections
-      rather than engineering dry-well predictions.
+    METHODOLOGICAL REQUIREMENT:
+      In DWLR monitoring networks, total drilled depth is frequently estimated, heuristic
+      (e.g., 1.35 * max water depth), or absent.
+      Extrapolating depletion rates against estimated well depth or fixed thresholds produces
+      scientifically unsound and misleading predictions.
+      Consequently, years-to-depletion is SUPPRESSED from primary results unless verified
+      drilled well depth, casing depth, and hydrogeological boundary data exist.
     """
     if current_level_m is None or not np.isfinite(current_level_m):
         return {
             "years": None,
             "status": "unassessed",
-            "is_illustrative": True,
+            "is_dependable_prediction": False,
             "remaining_head_m": None,
             "well_depth_source": "none",
             "disclaimer": "Water level observation is missing or invalid.",
         }
 
+    # If recovering or stable, depletion horizon is not applicable
     if annual_depletion <= 0.001:
         return {
             "years": None,
             "status": "stable_or_recovering",
-            "is_illustrative": True,
+            "is_dependable_prediction": False,
             "remaining_head_m": None,
             "well_depth_source": "none",
-            "disclaimer": "Water table is recovering or stable; depletion horizon not applicable.",
+            "disclaimer": "Water table is recovering or stable; depletion horizon is not applicable.",
         }
 
-    # Determine reference baseline depth
-    if well_depth_m and np.isfinite(well_depth_m) and float(well_depth_m) > current_level_m:
-        reference_depth = float(well_depth_m)
-        depth_source = "metadata_record_or_heuristic"
-    else:
-        # Conservative CGWB threshold for severe depression
-        reference_depth = max(CRITICAL_DEPTH_MAX, current_level_m + 10.0)
-        depth_source = "threshold_heuristic"
+    # Strict scientific guard: Require verified drilled-well and hydrogeological data
+    if not well_depth_verified or not hydrogeology_verified or not well_depth_m or float(well_depth_m) <= current_level_m:
+        return {
+            "years": None,
+            "status": "suppressed_unverified_well_depth",
+            "is_dependable_prediction": False,
+            "remaining_head_m": None,
+            "well_depth_source": "unverified_or_missing",
+            "disclaimer": (
+                "Years-to-depletion is suppressed from primary results: Verified drilled well depth, "
+                "casing depth, and hydrogeological aquifer boundary data are unavailable. Extrapolating depletion "
+                "against estimated well depth or fixed depth thresholds produces unscientific and misleading predictions."
+            ),
+        }
 
+    # Compute only when both well depth and hydrogeology are verified
+    reference_depth = float(well_depth_m)
     remaining_head = max(0.0, reference_depth - float(current_level_m))
-    if remaining_head <= 0.0:
-        years = 0.0
-    else:
-        years = round(remaining_head / annual_depletion, 1)
+    years = round(remaining_head / annual_depletion, 1) if remaining_head > 0 else 0.0
 
     return {
         "years": years,
-        "status": "illustrative_estimate",
-        "is_illustrative": True,
+        "status": "verified_hydrogeological_estimate",
+        "is_dependable_prediction": True,
         "remaining_head_m": round(remaining_head, 2),
-        "well_depth_source": depth_source,
+        "well_depth_source": "verified_drilled_well_record",
         "disclaimer": (
-            "Illustrative estimate only. Aquifer bottom / well depth is based on heuristic "
-            "or unverified metadata. Actual depletion depends on seasonal monsoon recharge, "
-            "local pumping variance, and hydrogeologic boundary conditions."
+            "Verified estimate based on lithologically confirmed drilled well depth and boundary conditions. "
+            "Actual depletion trajectory remains subject to future seasonal recharge and local pumping variance."
         ),
     }
 
@@ -465,8 +623,9 @@ def _compute_historical_trend(df: pd.DataFrame) -> Dict[str, Any]:
         return {
             "data": yearly.to_dict(orient="records"),
             "long_term_direction": "insufficient_data",
-            "pre_monsoon_trend_decline": False,
-            "post_monsoon_trend_decline": False,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+            "trend_years_count": len(yearly),
         }
 
     # Overall trend direction
@@ -483,8 +642,9 @@ def _compute_historical_trend(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Pre-monsoon trend analysis
     pre_df = df[df["month"].isin([4, 5])]
-    pre_decline = False
-    if len(pre_df["year"].unique()) >= 3:
+    pre_decline = None
+    pre_years = len(pre_df["year"].unique())
+    if pre_years >= 3:
         pre_yearly = pre_df.groupby("year")["water_level_m"].mean().sort_index()
         if len(pre_yearly) >= 3:
             pre_slope = np.polyfit(pre_yearly.index, pre_yearly.values, 1)[0]
@@ -492,8 +652,9 @@ def _compute_historical_trend(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Post-monsoon trend analysis
     post_df = df[df["month"].isin([10, 11])]
-    post_decline = False
-    if len(post_df["year"].unique()) >= 3:
+    post_decline = None
+    post_years = len(post_df["year"].unique())
+    if post_years >= 3:
         post_yearly = post_df.groupby("year")["water_level_m"].mean().sort_index()
         if len(post_yearly) >= 3:
             post_slope = np.polyfit(post_yearly.index, post_yearly.values, 1)[0]
@@ -504,13 +665,14 @@ def _compute_historical_trend(df: pd.DataFrame) -> Dict[str, Any]:
         "long_term_direction":        direction,
         "total_change_m":             round(total_change, 3),
         "years_of_data":              len(yearly),
+        "trend_years_count":          len(yearly),
         "pre_monsoon_trend_decline":  pre_decline,
         "post_monsoon_trend_decline": post_decline,
     }
 
 
 # ═══════════════════════════════════════════════════════════════
-# 6. RESOURCE AVAILABILITY INDEX (RAI)
+# 6. RESOURCE AVAILABILITY INDEX (RAI — UNVALIDATED HEURISTIC)
 # ═══════════════════════════════════════════════════════════════
 
 def _compute_resource_availability_index(
@@ -519,8 +681,13 @@ def _compute_resource_availability_index(
     annual_depletion: float,
 ) -> float:
     """
-    Composite index from 0 (severely depleted) to 100 (abundant/sustainable).
-    Combines: current depth tier, stage of extraction (if available), and depletion rate.
+    Exploratory operational heuristic composite index (0 to 100).
+
+    METHODOLOGICAL DISCLAIMER:
+      The Resource Availability Index (RAI) is an exploratory operational heuristic
+      combining depth tier (0-40), stage of extraction (0-35), and depletion rate (0-25).
+      It is NOT an official or validated CGWB metric, nor has it been empirically or
+      hydrogeologically validated against physical aquifer yields or statutory criteria.
     """
     if current_level_m is None or not np.isfinite(current_level_m):
         return 0.0
@@ -574,7 +741,7 @@ def evaluate_station(
     Comprehensive Task 3 evaluation for a single station.
     Maintains strict methodological separation between:
       1. Point-level depth indicator tier (safe, semi_critical, critical, over_exploited)
-      2. Statutory GEC-2015 assessment-unit categorization (when SOE is supplied)
+      2. Statutory GEC-2015 administrative assessment-unit categorization (when valid block and 10-yr trends exist)
 
     Args:
         readings_df   : DWLR readings with timestamp and water_level_m
@@ -598,31 +765,50 @@ def evaluate_station(
     depth_indicator   = classify_depth_tier(current_level)
     primary_status    = depth_indicator["tier"]
 
-    # 2. Cadence-aware depletion rate
+    # 2. Cadence-aware depletion rate with statistical confidence guards
     depletion         = _compute_depletion_rate(df)
 
-    # 3. Illustrative years to depletion
+    # 3. Years to depletion (suppressed from primary results unless verified)
+    well_depth_verified = bool(station_meta.get("well_depth_verified", False))
+    hydro_verified = bool(station_meta.get("hydrogeology_verified", False))
     depletion_est     = _compute_years_to_depletion(
         current_level,
         station_meta.get("well_depth_m"),
         depletion["annual_rate_m"],
+        well_depth_verified=well_depth_verified,
+        hydrogeology_verified=hydro_verified,
     )
 
     # 4. Long-term trend & decadal pre/post monsoon analysis
     historical_trend  = _compute_historical_trend(df)
 
-    # 5. Statutory GEC-2015 assessment-unit categorization
+    # 5. Statutory GEC-2015 assessment-unit categorization strictly at the administrative block level
+    assessment_unit_name = station_meta.get("block") or station_meta.get("district")
     gec_assessment    = classify_gec2015_assessment_unit(
         stage_of_extraction_pct=stage_of_dev,
-        pre_monsoon_trend_decline=historical_trend.get("pre_monsoon_trend_decline", False),
-        post_monsoon_trend_decline=historical_trend.get("post_monsoon_trend_decline", False),
-        assessment_unit=station_meta.get("block") or station_meta.get("district"),
+        pre_monsoon_trend_decline=historical_trend.get("pre_monsoon_trend_decline"),
+        post_monsoon_trend_decline=historical_trend.get("post_monsoon_trend_decline"),
+        assessment_unit=assessment_unit_name,
+        trend_years_count=historical_trend.get("trend_years_count"),
     )
 
-    # 6. Composite Resource Availability Index
+    # 6. Exploratory Resource Availability Index (heuristic)
     rai               = _compute_resource_availability_index(
         current_level, stage_of_dev, depletion["annual_rate_m"]
     )
+    rai_meta = {
+        "index_name": "Resource Availability Index (RAI)",
+        "value": rai,
+        "scale": "0_to_100",
+        "scientific_status": "exploratory_unvalidated_heuristic",
+        "is_statutory_cgwb_index": False,
+        "scoring_weights": {"water_level_depth_score": 40, "stage_of_extraction_score": 35, "depletion_rate_score": 25},
+        "disclaimer": (
+            "The Resource Availability Index (RAI) is an exploratory heuristic scoring model developed "
+            "for project screening. It is NOT an official CGWB metric, nor has it been empirically or "
+            "hydrogeologically validated against ground truth aquifer yield or statutory sustainability indices."
+        ),
+    }
 
     alert_required    = primary_status in ("critical", "over_exploited") or (
         gec_assessment.get("category") in ("critical", "over_exploited")
@@ -643,22 +829,28 @@ def evaluate_station(
         # Distinct scientific indicators
         "depth_indicator":            depth_indicator,
         "gec_assessment":             gec_assessment,
+        "is_station_official_assessment": False,
+        "statutory_note": (
+            "This station is an individual observation well. GEC-2015 assessments apply to the entire "
+            "administrative assessment unit (taluk/block), not to single observation points."
+        ),
         "assessment_type":            "dual_screening_and_gec2015" if stage_of_dev is not None else "point_level_depth_tier",
         "classification_note":        (
             f"Point-Level Depth: {depth_indicator['tier_label']} ({current_level:.2f}m bgl). "
-            f"Statutory GEC-2015 Assessment: {gec_assessment['category_label']} "
-            f"({gec_assessment['stage_of_extraction_pct']}% SOE) — {gec_assessment['rationale']}"
-            if stage_of_dev is not None else
+            f"Statutory GEC-2015 Assessment for {assessment_unit_name}: {gec_assessment['category_label']} — {gec_assessment['rationale']}"
+            if gec_assessment.get("category") != "unassessed" else
             f"Point-Level Depth: {depth_indicator['tier_label']} ({current_level:.2f}m bgl). "
-            "Statutory GEC-2015 block assessment requires assessment-unit volumetric extraction accounting."
+            f"Statutory GEC-2015 Assessment: {gec_assessment['category_label']} ({gec_assessment['rationale']})"
         ),
         "stage_of_development_pct":   stage_of_dev,
         "annual_depletion_rate_m":    depletion["annual_rate_m"],
         "depletion_details":          depletion,
+        # Years to depletion is None unless verified hydrogeology exists
         "years_to_depletion":         depletion_est["years"],
         "depletion_estimate":         depletion_est,
         "historical_trend":           historical_trend,
         "resource_availability_index": rai,
+        "resource_availability_index_meta": rai_meta,
         "alert_required":             alert_required,
         "summary":                    _build_summary(
             station_id, current_level, depth_indicator, gec_assessment, depletion_est["years"], rai
@@ -705,6 +897,7 @@ def generate_district_scorecard(station_results: list[dict]) -> dict:
         "status_breakdown":      status_counts,
         "alerts_active":         alert_count,
         "most_stressed_stations": df_ranked.to_dict(orient="records"),
+        "rai_scientific_status": "exploratory_unvalidated_heuristic",
     }
 
 
@@ -737,6 +930,7 @@ def generate_state_scorecard(district_scorecards: dict) -> dict:
              for d in district_scorecards],
             key=lambda x: x["rai"]
         ),
+        "rai_scientific_status": "exploratory_unvalidated_heuristic",
     }
 
 
@@ -769,18 +963,18 @@ def _build_summary(
     rai:               float,
 ) -> str:
     depletion_str = (
-        f" Illustrative depletion horizon: ~{years_to_depletion} years."
-        if years_to_depletion is not None and years_to_depletion < 50
-        else ""
+        f" Verified depletion horizon: ~{years_to_depletion} years."
+        if years_to_depletion is not None
+        else " (Depletion horizon unassessed: requires verified drilled well depth)."
     )
     gec_str = (
         f" Assessment unit GEC-2015 category: {gec_assessment['category_label']}."
         if gec_assessment.get("category") != "unassessed"
-        else ""
+        else " (Statutory GEC-2015 block category: Unassessed)."
     )
     return (
         f"Station {station_id}: water level {current_level}m ({depth_indicator['tier_label']}).{gec_str} "
-        f"Resource Availability Index: {rai}/100.{depletion_str}"
+        f"Exploratory RAI (heuristic): {rai}/100.{depletion_str}"
     )
 
 
@@ -798,6 +992,8 @@ def _empty_result(station_id: str, reason: str) -> dict:
         "status_color":                "#95A5A6",
         "depth_indicator":             classify_depth_tier(None),
         "gec_assessment":              classify_gec2015_assessment_unit(None),
+        "is_station_official_assessment": False,
+        "statutory_note":              "This station is an individual observation well. GEC-2015 assessments apply to administrative units.",
         "stage_of_development_pct":    None,
         "annual_depletion_rate_m":     0.0,
         "depletion_details":           {},
@@ -805,6 +1001,11 @@ def _empty_result(station_id: str, reason: str) -> dict:
         "depletion_estimate":          _compute_years_to_depletion(None, None, 0.0),
         "historical_trend":            {"data": [], "long_term_direction": "unknown"},
         "resource_availability_index": 0.0,
+        "resource_availability_index_meta": {
+            "index_name": "Resource Availability Index (RAI)",
+            "value": 0.0,
+            "scientific_status": "exploratory_unvalidated_heuristic",
+        },
         "alert_required":              False,
         "summary":                     reason,
     }
