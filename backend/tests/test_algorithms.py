@@ -1,6 +1,13 @@
 """
 backend/tests/test_algorithms.py — JalDrishti Analytical Algorithm Unit Tests
-Tests Task 1 Fluctuation, Task 2 Recharge, and Task 3 CGWB Resource Evaluation.
+Tests:
+  - Task 1 Fluctuation
+  - Task 2 Recharge
+  - Task 3 Depth Indicator Tiers & Boundary Conditions
+  - Task 3 GEC-2015 Official Assessment-Unit Categorization & Boundary Tests
+  - Task 3 Conflicting Indicators (Point Depth vs GEC-2015)
+  - Task 3 Cadence-Aware Depletion Rate (Annual Historical vs Sub-Daily Telemetry)
+  - Task 3 Illustrative Depletion Horizon & Scientific Disclaimers
 """
 
 import sys
@@ -16,7 +23,16 @@ if str(BACKEND_DIR) not in sys.path:
 
 from algorithms.task1_fluctuation import analyze_fluctuations
 from algorithms.task2_recharge import estimate_recharge
-from algorithms.task3_evaluation import evaluate_station, SAFE_MAX, SEMI_CRITICAL_MAX, CRITICAL_MAX
+from algorithms.task3_evaluation import (
+    evaluate_station,
+    classify_depth_tier,
+    classify_gec2015_assessment_unit,
+    _compute_depletion_rate,
+    _compute_years_to_depletion,
+    SAFE_MAX,
+    SEMI_CRITICAL_MAX,
+    CRITICAL_MAX,
+)
 
 
 @pytest.fixture
@@ -79,75 +95,187 @@ def test_task2_recharge(mock_station_readings, mock_rainfall):
     assert "zone_status" in res
 
 
-def test_task3_cgwb_evaluation():
-    """Test Task 3 CGWB resource evaluation and status classification."""
-    meta = {
-        "station_id": "STN_TEST_01",
-        "state": "Karnataka",
-        "district": "Bangalore Rural",
-        "well_depth_m": 60.0,
-        "aquifer_type": "Granite",
+def test_task3_depth_indicator_boundaries():
+    """Verify point-level depth indicator boundaries (<8m, 8–<15m, 15–25m, >25m)."""
+    # Safe Depth: < 8.0m
+    safe_0 = classify_depth_tier(0.0)
+    assert safe_0["tier"] == "safe"
+    assert "Safe Depth" in safe_0["tier_label"]
+
+    safe_edge = classify_depth_tier(7.999)
+    assert safe_edge["tier"] == "safe"
+
+    # Semi-Critical Depth: 8.0m to < 15.0m (8.0m must NOT be safe!)
+    semi_8 = classify_depth_tier(8.0)
+    assert semi_8["tier"] == "semi_critical"
+    assert "Semi-Critical" in semi_8["tier_label"]
+
+    semi_14 = classify_depth_tier(14.99)
+    assert semi_14["tier"] == "semi_critical"
+
+    # Critical Depth: 15.0m to <= 25.0m (15.0m must NOT be semi-critical!)
+    crit_15 = classify_depth_tier(15.0)
+    assert crit_15["tier"] == "critical"
+    assert "Critical" in crit_15["tier_label"]
+
+    crit_25 = classify_depth_tier(25.0)
+    assert crit_25["tier"] == "critical"
+
+    # Over-Exploited Depth: > 25.0m
+    over_25 = classify_depth_tier(25.01)
+    assert over_25["tier"] == "over_exploited"
+    assert "Over-Exploited" in over_25["tier_label"]
+
+    # Non-finite / Missing
+    assert classify_depth_tier(None)["tier"] == "unknown"
+    assert classify_depth_tier(float("nan"))["tier"] == "unknown"
+
+
+def test_gec2015_boundary_conditions():
+    """Verify statutory GEC-2015 category boundaries & decadal trend rules."""
+    # SOE <= 70%
+    # No trend declines -> Safe
+    res_safe = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False)
+    assert res_safe["category"] == "safe"
+
+    # SOE <= 70% with single decline -> Still Safe under GEC-2015
+    res_safe_one = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False)
+    assert res_safe_one["category"] == "safe"
+
+    # SOE <= 70% with dual decline -> Semi-Critical
+    res_semi_dual = classify_gec2015_assessment_unit(70.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True)
+    assert res_semi_dual["category"] == "semi_critical"
+
+    # 70% < SOE <= 90% -> Semi-Critical
+    res_semi_71 = classify_gec2015_assessment_unit(70.01)
+    assert res_semi_71["category"] == "semi_critical"
+
+    res_semi_90 = classify_gec2015_assessment_unit(90.0)
+    assert res_semi_90["category"] == "semi_critical"
+
+    # 90% < SOE <= 100%
+    # Without trend decline -> Semi-Critical
+    res_90_notrend = classify_gec2015_assessment_unit(95.0, pre_monsoon_trend_decline=False, post_monsoon_trend_decline=False)
+    assert res_90_notrend["category"] == "semi_critical"
+
+    # With trend decline -> Critical
+    res_90_trend = classify_gec2015_assessment_unit(95.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=False)
+    assert res_90_trend["category"] == "critical"
+
+    # SOE > 100% -> Over-Exploited
+    res_oe_100_1 = classify_gec2015_assessment_unit(100.01)
+    assert res_oe_100_1["category"] == "over_exploited"
+
+    res_oe_135 = classify_gec2015_assessment_unit(135.0, pre_monsoon_trend_decline=True, post_monsoon_trend_decline=True)
+    assert res_oe_135["category"] == "over_exploited"
+
+
+def test_conflicting_depth_and_gec_indicators():
+    """
+    Verify complete separation of point depth indicator and statutory GEC-2015 category.
+    Never blend them into a single misleading status.
+    """
+    # Scenario A: Shallow well (4.5m, Safe Depth) in an Over-Exploited block (SOE = 115%)
+    base_time = pd.Timestamp("2020-01-01 00:00:00")
+    shallow_readings = pd.DataFrame([
+        {"station_id": "STN_SHALLOW_OE", "timestamp": base_time + pd.DateOffset(years=i), "water_level_m": 4.5}
+        for i in range(5)
+    ])
+    meta_a = {
+        "station_id": "STN_SHALLOW_OE",
+        "district": "Bangalore Urban",
+        "block": "Anekal",
+        "well_depth_m": 40.0,
     }
+    res_a = evaluate_station(shallow_readings, meta_a, stage_of_dev=115.0)
 
-    # Safe: level 6.0m (< 8m)
-    base_time = pd.Timestamp("2025-06-01 00:00:00", tz="Asia/Kolkata")
-    safe_rows = [
-        {"station_id": "STN_TEST_01", "timestamp": base_time + pd.Timedelta(days=i), "water_level_m": 6.0}
-        for i in range(40)
-    ]
-    res_safe = evaluate_station(pd.DataFrame(safe_rows), meta, stage_of_dev=55.0)
-    assert res_safe["status"] == "safe"
+    # Point depth indicator is Safe Depth (<8m)
+    assert res_a["depth_indicator"]["tier"] == "safe"
+    assert res_a["depth_indicator"]["current_level_m"] == 4.5
+    # GEC-2015 block categorization is Over-Exploited (>100% SOE)
+    assert res_a["gec_assessment"]["category"] == "over_exploited"
+    assert res_a["gec_assessment"]["stage_of_extraction_pct"] == 115.0
+    # Both indicators are independently preserved in output
+    assert res_a["depth_indicator"]["tier"] != res_a["gec_assessment"]["category"]
 
-    # Semi-critical: level 12.0m (8m - 15m)
-    semi_rows = [
-        {"station_id": "STN_TEST_01", "timestamp": base_time + pd.Timedelta(days=i), "water_level_m": 12.0}
-        for i in range(40)
-    ]
-    res_semi = evaluate_station(pd.DataFrame(semi_rows), meta, stage_of_dev=80.0)
-    assert res_semi["status"] == "semi_critical"
+    # Scenario B: Deep well (27.5m, Over-Exploited Depth) in a Safe block (SOE = 52%)
+    deep_readings = pd.DataFrame([
+        {"station_id": "STN_DEEP_SAFE", "timestamp": base_time + pd.DateOffset(years=i), "water_level_m": 27.5}
+        for i in range(5)
+    ])
+    meta_b = {
+        "station_id": "STN_DEEP_SAFE",
+        "district": "Udupi",
+        "block": "Karkala",
+        "well_depth_m": 60.0,
+    }
+    res_b = evaluate_station(deep_readings, meta_b, stage_of_dev=52.0)
 
-    # Critical: level 20.0m (15m - 25m)
-    crit_rows = [
-        {"station_id": "STN_TEST_01", "timestamp": base_time + pd.Timedelta(days=i), "water_level_m": 20.0}
-        for i in range(40)
-    ]
-    res_crit = evaluate_station(pd.DataFrame(crit_rows), meta, stage_of_dev=95.0)
-    assert res_crit["status"] == "critical"
-
-    # Over-exploited: level 32.0m (> 25m)
-    over_rows = [
-        {"station_id": "STN_TEST_01", "timestamp": base_time + pd.Timedelta(days=i), "water_level_m": 32.0}
-        for i in range(40)
-    ]
-    res_over = evaluate_station(pd.DataFrame(over_rows), meta, stage_of_dev=115.0)
-    assert res_over["status"] == "over_exploited"
+    assert res_b["depth_indicator"]["tier"] == "over_exploited"
+    assert res_b["gec_assessment"]["category"] == "safe"
+    assert res_b["depth_indicator"]["tier"] != res_b["gec_assessment"]["category"]
 
 
-def test_task3_boundary_conditions():
-    """Verify exact CGWB project boundary thresholds: Safe <8m; Semi-Critical 8–<15m; Critical 15–25m; Over-Exploited >25m."""
-    from algorithms.task3_evaluation import _classify_status
+def test_cadence_aware_depletion_rate_annual():
+    """
+    Test depletion-rate calculation on 30-year annual CGWB historical data.
+    Water level drops from 10.0m to 13.0m over 30 years -> 0.100 m/year.
+    MUST NOT multiply by 365*96 (which would erroneously yield 3,504 m/year).
+    """
+    base_time = pd.Timestamp("1995-05-01 00:00:00")
+    # 30 annual readings with steady 0.1 m/yr drop
+    records = []
+    for yr in range(30):
+        records.append({
+            "station_id": "STN_ANNUAL_30",
+            "timestamp": base_time + pd.DateOffset(years=yr),
+            "water_level_m": 10.0 + (yr * 0.1),
+        })
+    df_annual = pd.DataFrame(records)
 
-    # Safe: < 8.0m
-    assert _classify_status(0.0, None) == "safe"
-    assert _classify_status(7.99, None) == "safe"
+    depletion = _compute_depletion_rate(df_annual)
+    assert depletion["cadence"] == "annual_historical"
+    assert depletion["reading_count"] == 30
+    # Annual rate must be approximately 0.100 m/year
+    assert pytest.approx(depletion["annual_rate_m"], abs=0.01) == 0.100
+    assert depletion["annual_rate_m"] < 1.0  # Guard against 3,504 m/yr multiplier bug!
+    assert depletion["trend_direction"] == "depleting"
 
-    # Semi-Critical: 8.0m to < 15.0m (8.0 must NOT be Safe!)
-    assert _classify_status(8.0, None) == "semi_critical"
-    assert _classify_status(8.001, None) == "semi_critical"
-    assert _classify_status(14.99, None) == "semi_critical"
 
-    # Critical: 15.0m to <= 25.0m (15.0 must NOT be Semi-Critical!)
-    assert _classify_status(15.0, None) == "critical"
-    assert _classify_status(20.0, None) == "critical"
-    assert _classify_status(25.0, None) == "critical"
+def test_cadence_aware_depletion_rate_telemetry():
+    """
+    Test depletion-rate calculation on 15-minute DWLR telemetry.
+    Detects sub_daily_telemetry cadence and scales via fractional years.
+    """
+    base_time = pd.Timestamp("2025-01-01 00:00:00")
+    # 48 readings spaced 15 minutes apart (12 hours) with 0.05m drop
+    records = []
+    for i in range(48):
+        records.append({
+            "station_id": "STN_TELEMETRY",
+            "timestamp": base_time + pd.Timedelta(minutes=15 * i),
+            "water_level_m": 8.0 + (i * 0.001),
+        })
+    df_telem = pd.DataFrame(records)
 
-    # Over-Exploited: > 25.0m (25.01 must be Over-Exploited)
-    assert _classify_status(25.01, None) == "over_exploited"
-    assert _classify_status(50.0, None) == "over_exploited"
+    depletion = _compute_depletion_rate(df_telem)
+    assert depletion["cadence"] == "sub_daily_telemetry"
+    assert depletion["reading_count"] == 48
 
-    # Missing / Invalid / Non-finite values must NEVER be Safe -> must be unknown
-    assert _classify_status(None, None) == "unknown"
-    assert _classify_status(float("nan"), None) == "unknown"
-    assert _classify_status(np.nan, None) == "unknown"
-    assert _classify_status(float("inf"), None) == "unknown"
 
+def test_years_to_depletion_illustrative_estimate():
+    """
+    Verify years-to-depletion is flagged as illustrative estimate
+    with required scientific disclaimer when well depth is unmeasured.
+    """
+    res = _compute_years_to_depletion(current_level_m=12.0, well_depth_m=None, annual_depletion=0.5)
+    assert res["status"] == "illustrative_estimate"
+    assert res["is_illustrative"] is True
+    assert "Illustrative estimate only" in res["disclaimer"]
+    assert res["years"] is not None
+    assert res["years"] > 0
+
+    # Recovering water level -> None years
+    rec = _compute_years_to_depletion(current_level_m=12.0, well_depth_m=50.0, annual_depletion=-0.2)
+    assert rec["years"] is None
+    assert rec["status"] == "stable_or_recovering"

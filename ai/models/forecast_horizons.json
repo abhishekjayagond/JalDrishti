@@ -1,0 +1,31 @@
+{
+  "methodology": "multi_horizon_recursive_autoregressive_evaluation",
+  "description": "Differentiates 1-year rolling forecasts (t+1) from multi-year recursive forecasts (t+2, t+3). In multi-year forecasts, earlier predictions are fed back into lag features, compounding error.",
+  "horizon_1_year_rolling": {
+    "lead_time": "1 year ahead (t+1)",
+    "mae_mbgl": 1.6381474393917301,
+    "rmse_mbgl": 2.432116293213479,
+    "r2": 0.5737047999399093,
+    "sample_count": 997,
+    "input_features": "Ground-truth antecedent observations"
+  },
+  "horizon_2_year_recursive": {
+    "lead_time": "2 years ahead (t+2)",
+    "mae_mbgl": 1.7493116859192765,
+    "rmse_mbgl": 2.7558524770222563,
+    "r2": 0.5249488134028746,
+    "sample_count": 338,
+    "input_features": "1-year recursive prediction fed into lag_1",
+    "mae_error_growth_pct": 6.79
+  },
+  "horizon_3_year_recursive": {
+    "lead_time": "3 years ahead (t+3)",
+    "mae_mbgl": 1.7396958145739123,
+    "rmse_mbgl": 2.2549396163550948,
+    "r2": 0.5816858363987933,
+    "sample_count": 301,
+    "input_features": "1-year & 2-year recursive predictions fed into lag_1 & lag_2",
+    "mae_error_growth_pct": 6.2
+  },
+  "error_compounding_summary": "MAE compounds from 1.638m at 1-year lead time to 1.749m at 2-year lead time and 1.740m at 3-year lead time."
+}

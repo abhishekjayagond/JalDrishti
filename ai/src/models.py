@@ -58,48 +58,68 @@ class STGNNRegressor(nn.Module):
 
 
 def split_target_years(df: pd.DataFrame):
+    """
+    Defensible 4-way chronological split:
+      - Train:       target years <= 2016 (model fitting & preprocessors)
+      - Validation:  target years 2017-2019 (hyperparameter tuning & model selection)
+      - Calibration: target years 2020-2022 (conformal prediction residual calibration)
+      - Test:        target years >= 2023 (unseen holdout evaluation 2023-2025)
+    """
     years = sorted(df.target_year.unique())
-    if len(years) < 5:
-        raise ValueError("Not enough target years")
-    train_years = [int(y) for y in years if y <= 2018]
-    val_years = [int(y) for y in years if 2019 <= y <= 2022]
+    if len(years) < 7:
+        raise ValueError("Not enough target years for 4-way chronological split")
+    train_years = [int(y) for y in years if y <= 2016]
+    val_years = [int(y) for y in years if 2017 <= y <= 2019]
+    calib_years = [int(y) for y in years if 2020 <= y <= 2022]
     test_years = [int(y) for y in years if y >= 2023]
-    return train_years, val_years, test_years
+    return train_years, val_years, calib_years, test_years
 
 
 def fit_tabular_models(features: pd.DataFrame, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
-    train_years, val_years, test_years = split_target_years(features)
+    train_years, val_years, calib_years, test_years = split_target_years(features)
     cols = FEATURES
     val_results = {}
+    calib_results = {}
     test_results = {}
     val_preds = {}
+    calib_preds = {}
     test_preds = {}
     
     tr = features[features.target_year.isin(train_years)]
     va = features[features.target_year.isin(val_years)]
+    ca = features[features.target_year.isin(calib_years)]
     te = features[features.target_year.isin(test_years)]
 
     for name, model in [
         ("linear_regression", LinearRegression()),
         ("random_forest", RandomForestRegressor(n_estimators=350, max_depth=16, min_samples_leaf=2, random_state=42, n_jobs=-1)),
     ]:
+        # Fit benchmark evaluation model strictly on training observations (<= 2016)
         model.fit(tr[cols], tr.target)
         p_val = model.predict(va[cols])
+        p_calib = model.predict(ca[cols])
         p_test = model.predict(te[cols])
         
         val_results[name] = regression_metrics(va.target, p_val)
+        calib_results[name] = regression_metrics(ca.target, p_calib)
         test_results[name] = regression_metrics(te.target, p_test)
         
         val_preds[name] = pd.DataFrame({"station_id": va.station_id.to_numpy(), "target_year": va.target_year.to_numpy(), "y_true": va.target.to_numpy(), "prediction": p_val})
+        calib_preds[name] = pd.DataFrame({"station_id": ca.station_id.to_numpy(), "target_year": ca.target_year.to_numpy(), "y_true": ca.target.to_numpy(), "prediction": p_calib})
         test_preds[name] = pd.DataFrame({"station_id": te.station_id.to_numpy(), "target_year": te.target_year.to_numpy(), "y_true": te.target.to_numpy(), "prediction": p_test})
         
         joblib.dump(model, out_dir / f"{name}.joblib")
+
+    # Fit dedicated production model on all eligible historical observations through 2025
+    prod_lr = LinearRegression()
+    prod_lr.fit(features[cols], features.target.to_numpy(float))
+    joblib.dump(prod_lr, out_dir / "production_linear_regression.joblib")
         
-    return val_results, test_results, val_preds, test_preds, train_years, val_years, test_years
+    return val_results, calib_results, test_results, val_preds, calib_preds, test_preds, train_years, val_years, calib_years, test_years
 
 
-def _make_sequences(clean: pd.DataFrame, nodes: pd.DataFrame, window: int = 5, train_cutoff_year: int = 2018):
+def _make_sequences(clean: pd.DataFrame, nodes: pd.DataFrame, window: int = 5, train_cutoff_year: int = 2016):
     ids = nodes.sort_values("station_id").station_id.tolist()
     wide = clean[clean.station_id.isin(ids)].pivot(index="year", columns="station_id", values="water_level_mbgl").sort_index().reindex(columns=ids)
     mask = wide.notna().astype(np.float32)
@@ -160,7 +180,7 @@ def _train_torch(model, X, y, ymask, train_mask, val_mask, criterion_mask=True, 
 
 
 def fit_lstm(clean: pd.DataFrame, nodes: pd.DataFrame, out_dir: Path):
-    Xg, yg, mg, ty, ids, fill = _make_sequences(clean, nodes, window=5, train_cutoff_year=2018)
+    Xg, yg, mg, ty, ids, fill = _make_sequences(clean, nodes, window=5, train_cutoff_year=2016)
     # Flatten graph samples to node samples.
     X = Xg.transpose(0, 2, 1, 3).reshape(-1, Xg.shape[1], 2)
     y = yg.reshape(-1)
@@ -170,14 +190,15 @@ def fit_lstm(clean: pd.DataFrame, nodes: pd.DataFrame, out_dir: Path):
     keep = masks > 0
     X, y, target_year_repeat, station_repeat = X[keep], y[keep], target_year_repeat[keep], station_repeat[keep]
     
-    # Strictly fit scaler on training sequence data only
-    tr_mask = target_year_repeat <= 2018
+    # Strictly fit scaler on training sequence data only (<= 2016)
+    tr_mask = target_year_repeat <= 2016
     scaler = StandardScaler()
     scaler.fit(X[tr_mask].reshape(-1, 2))
     Xs = scaler.transform(X.reshape(-1, 2)).reshape(X.shape)
     
-    tr = target_year_repeat <= 2018
-    va = (target_year_repeat >= 2019) & (target_year_repeat <= 2022)
+    tr = target_year_repeat <= 2016
+    va = (target_year_repeat >= 2017) & (target_year_repeat <= 2019)
+    ca = (target_year_repeat >= 2020) & (target_year_repeat <= 2022)
     te = target_year_repeat >= 2023
     
     torch.manual_seed(42)
@@ -188,24 +209,27 @@ def fit_lstm(clean: pd.DataFrame, nodes: pd.DataFrame, out_dir: Path):
     
     with torch.no_grad():
         p_val = model(torch.tensor(Xs[va], device=device)).cpu().numpy()
+        p_calib = model(torch.tensor(Xs[ca], device=device)).cpu().numpy()
         p_test = model(torch.tensor(Xs[te], device=device)).cpu().numpy()
         
     val_metrics = regression_metrics(y[va], p_val)
+    calib_metrics = regression_metrics(y[ca], p_calib)
     test_metrics = regression_metrics(y[te], p_test)
     
     torch.save({"state_dict": model.state_dict(), "scaler_mean": scaler.mean_, "scaler_scale": scaler.scale_}, out_dir / "lstm.pt")
     
     val_pred = pd.DataFrame({"station_id": [ids[i] for i in station_repeat[va]], "target_year": target_year_repeat[va], "y_true": y[va], "prediction": p_val})
+    calib_pred = pd.DataFrame({"station_id": [ids[i] for i in station_repeat[ca]], "target_year": target_year_repeat[ca], "y_true": y[ca], "prediction": p_calib})
     test_pred = pd.DataFrame({"station_id": [ids[i] for i in station_repeat[te]], "target_year": target_year_repeat[te], "y_true": y[te], "prediction": p_test})
     
-    return val_metrics, test_metrics, val_pred, test_pred
+    return val_metrics, calib_metrics, test_metrics, val_pred, calib_pred, test_pred
 
 
 def fit_stgnn(clean: pd.DataFrame, nodes: pd.DataFrame, A: np.ndarray, out_dir: Path):
-    X, y, m, ty, ids, fill = _make_sequences(clean, nodes, window=5, train_cutoff_year=2018)
+    X, y, m, ty, ids, fill = _make_sequences(clean, nodes, window=5, train_cutoff_year=2016)
     
-    # Scale groundwater values using strictly the training portion. Mask feature stays 0/1.
-    tr_samples = ty <= 2018
+    # Scale groundwater values using strictly the training portion (<= 2016). Mask feature stays 0/1.
+    tr_samples = ty <= 2016
     train_vals = X[tr_samples, :, :, 0]
     mu = float(train_vals.mean())
     sigma = float(train_vals.std() + 1e-6)
@@ -213,8 +237,9 @@ def fit_stgnn(clean: pd.DataFrame, nodes: pd.DataFrame, A: np.ndarray, out_dir: 
     Xs[..., 0] = (Xs[..., 0] - mu) / sigma
     ys = (y - mu) / sigma
     
-    tr = ty <= 2018
-    va = (ty >= 2019) & (ty <= 2022)
+    tr = ty <= 2016
+    va = (ty >= 2017) & (ty <= 2019)
+    ca = (ty >= 2020) & (ty <= 2022)
     te = ty >= 2023
     
     torch.manual_seed(42)
@@ -226,11 +251,16 @@ def fit_stgnn(clean: pd.DataFrame, nodes: pd.DataFrame, A: np.ndarray, out_dir: 
     
     with torch.no_grad():
         p_val_raw = model(torch.tensor(Xs[va], device=device), A_t).cpu().numpy() * sigma + mu
+        p_calib_raw = model(torch.tensor(Xs[ca], device=device), A_t).cpu().numpy() * sigma + mu
         p_test_raw = model(torch.tensor(Xs[te], device=device), A_t).cpu().numpy() * sigma + mu
         
     truth_val = y[va]
     m_val = m[va]
     val_metrics = regression_metrics(truth_val[m_val > 0], p_val_raw[m_val > 0])
+    
+    truth_calib = y[ca]
+    m_calib = m[ca]
+    calib_metrics = regression_metrics(truth_calib[m_calib > 0], p_calib_raw[m_calib > 0])
     
     truth_test = y[te]
     m_test = m[te]
@@ -238,18 +268,16 @@ def fit_stgnn(clean: pd.DataFrame, nodes: pd.DataFrame, A: np.ndarray, out_dir: 
     
     torch.save({"state_dict": model.state_dict(), "mu": mu, "sigma": sigma, "window": 5, "hidden": 32}, out_dir / "stgnn.pt")
     
-    val_pred = []
-    for si, yr in enumerate(ty[va]):
-        for j, sid in enumerate(ids):
-            if m[va][si, j] > 0:
-                val_pred.append((sid, int(yr), float(y[va][si, j]), float(p_val_raw[si, j])))
-    val_pred_df = pd.DataFrame(val_pred, columns=["station_id", "target_year", "y_true", "prediction"])
+    def _extract_preds(y_arr, m_arr, p_arr, ty_slice):
+        records = []
+        for si, yr in enumerate(ty_slice):
+            for j, sid in enumerate(ids):
+                if m_arr[si, j] > 0:
+                    records.append((sid, int(yr), float(y_arr[si, j]), float(p_arr[si, j])))
+        return pd.DataFrame(records, columns=["station_id", "target_year", "y_true", "prediction"])
+
+    val_pred_df = _extract_preds(y[va], m[va], p_val_raw, ty[va])
+    calib_pred_df = _extract_preds(y[ca], m[ca], p_calib_raw, ty[ca])
+    test_pred_df = _extract_preds(y[te], m[te], p_test_raw, ty[te])
     
-    test_pred = []
-    for si, yr in enumerate(ty[te]):
-        for j, sid in enumerate(ids):
-            if m[te][si, j] > 0:
-                test_pred.append((sid, int(yr), float(y[te][si, j]), float(p_test_raw[si, j])))
-    test_pred_df = pd.DataFrame(test_pred, columns=["station_id", "target_year", "y_true", "prediction"])
-    
-    return val_metrics, test_metrics, val_pred_df, test_pred_df
+    return val_metrics, calib_metrics, test_metrics, val_pred_df, calib_pred_df, test_pred_df

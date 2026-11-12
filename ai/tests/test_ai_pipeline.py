@@ -1,13 +1,17 @@
 import sys
+import json
 from pathlib import Path
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data_pipeline import load_clean, candidate_stations
+from src.config import MODELS, METRICS_JSON, CALIBRATION_JSON, FORECAST_HORIZONS_JSON, PRODUCTION_MODEL, LR_MODEL
 RAW = ROOT / "data/raw/phase1_karnataka_premonsoon_1994_2025.csv"
+
 
 def test_cleaning_counts():
     df = load_clean(RAW)
@@ -15,6 +19,7 @@ def test_cleaning_counts():
     assert df.year.min() == 1994
     assert df.year.max() == 2025
     assert df.station_id.nunique() == 2112
+
 
 def test_candidates():
     df = load_clean(RAW)
@@ -84,3 +89,65 @@ def test_forecast_distribution_and_unavailable():
     assert unknown_risk == "Unavailable"
 
 
+def test_chronological_4way_split_and_conformal():
+    """Verify 4-way chronological split, separate calibration holdout, and non-empty exchangeability limitations."""
+    assert METRICS_JSON.exists()
+    assert CALIBRATION_JSON.exists()
+    
+    metrics = json.loads(METRICS_JSON.read_text(encoding="utf-8"))
+    conf = json.loads(CALIBRATION_JSON.read_text(encoding="utf-8"))
+    
+    split = metrics["split"]
+    assert split["strategy"] == "4_way_chronological_split"
+    
+    train_years = set(split["train_years"])
+    val_years = set(split["validation_years"])
+    calib_years = set(split["calibration_years"])
+    test_years = set(split["test_years"])
+    
+    # Strictly disjoint sets
+    assert len(train_years.intersection(val_years)) == 0
+    assert len(val_years.intersection(calib_years)) == 0
+    assert len(calib_years.intersection(test_years)) == 0
+    assert len(train_years.intersection(test_years)) == 0
+    
+    # Chronological ordering
+    assert max(train_years) < min(val_years)
+    assert max(val_years) < min(calib_years)
+    assert max(calib_years) < min(test_years)
+    
+    # Conformal calibrated on calibration split (not validation!)
+    assert conf["calibration_years"] == sorted(list(calib_years))
+    assert conf["test_empirical_coverage_overall"] > 0.90
+    assert "exchangeability_assumptions_and_limitations" in conf
+    assert len(conf["exchangeability_assumptions_and_limitations"]) > 50
+
+
+def test_model_selection_eligibility_and_production_artifact():
+    """Verify model selection follows documented eligibility rules and separate production model exists."""
+    metrics = json.loads(METRICS_JSON.read_text(encoding="utf-8"))
+    ms = metrics["model_selection"]
+    
+    assert ms["selected_model"] == "linear_regression"
+    framework = ms["eligibility_framework"]
+    assert framework["lstm"]["eligible"] is False
+    assert "Sequence starvation" in framework["lstm"]["disqualification_reason"]
+    assert framework["linear_regression"]["eligible"] is True
+    
+    # Separate artifacts exist
+    assert PRODUCTION_MODEL.exists()
+    assert LR_MODEL.exists()
+
+
+def test_multi_horizon_recursive_evaluation():
+    """Verify multi-horizon recursive evaluation quantifies error compounding."""
+    assert FORECAST_HORIZONS_JSON.exists()
+    horizons = json.loads(FORECAST_HORIZONS_JSON.read_text(encoding="utf-8"))
+    
+    h1 = horizons["horizon_1_year_rolling"]
+    h2 = horizons["horizon_2_year_recursive"]
+    h3 = horizons["horizon_3_year_recursive"]
+    
+    assert h1["mae_mbgl"] > 0
+    assert h2["mae_mbgl"] >= h1["mae_mbgl"]  # Error compounds across lead times
+    assert "error_compounding_summary" in horizons

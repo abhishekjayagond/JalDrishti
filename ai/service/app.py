@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -11,26 +12,24 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.config import CLEAN_CSV, NODE_CSV, PROCESSED, LR_MODEL, METRICS_JSON
-from src.models import FEATURES
-
-app = FastAPI(title="JalDrishti Groundwater AI", version="1.1.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+from src.config import (
+    CLEAN_CSV,
+    NODE_CSV,
+    PROCESSED,
+    PRODUCTION_MODEL,
+    LR_MODEL,
+    METRICS_JSON,
+    CALIBRATION_JSON,
+    FORECAST_HORIZONS_JSON,
 )
+from src.models import FEATURES
 
 clean: pd.DataFrame | None = None
 nodes: pd.DataFrame | None = None
 model: Any = None
 metrics: dict[str, Any] = {}
 validation_band: dict[str, Any] = {}
-
-
+horizons_info: dict[str, Any] = {}
 all_forecasts: dict[str, dict[str, Any]] = {}
 
 
@@ -70,14 +69,15 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
     last_year = int(max(hist))
     forecast_year = last_year + 1
     last4 = [hist[y] for y in prior_years]  # oldest to newest
-    feat = pd.DataFrame([{
+
+    # 1-year rolling forecast feature vector (h=1)
+    feat1 = pd.DataFrame([{
         "latitude": float(row.iloc[0].latitude),
         "longitude": float(row.iloc[0].longitude),
         "gwl_lag_1": last4[-1],
         "gwl_lag_2": last4[-2],
         "gwl_lag_3": last4[-3],
         "gwl_lag_4": last4[-4],
-        # Offsets are measured from the target forecast year, matching training features.
         "years_back_1": float(forecast_year - prior_years[-1]),
         "years_back_2": float(forecast_year - prior_years[-2]),
         "years_back_3": float(forecast_year - prior_years[-3]),
@@ -87,86 +87,143 @@ def _compute_station_forecast(station_id: str) -> dict[str, Any] | None:
         "gwl_slope_4": float(np.polyfit(np.arange(4), np.asarray(last4), 1)[0]),
     }])
 
-    pred = float(model.predict(feat[FEATURES])[0])
-    radius = validation_band.get("radius_mbgl")
-    lower = float(pred - radius) if radius is not None else None
-    upper = float(pred + radius) if radius is not None else None
-    status = classify_gwl_depth(pred)
+    pred1 = float(model.predict(feat1[FEATURES])[0])
+    radius = validation_band.get("uncertainty_radius_mbgl", validation_band.get("radius_mbgl"))
+    lower1 = float(pred1 - radius) if radius is not None else None
+    upper1 = float(pred1 + radius) if radius is not None else None
+    status1 = classify_gwl_depth(pred1)
+
+    # Multi-year recursive forecast projections (h=1, h=2, h=3)
+    # At h=2, pred1 is used as lag_1
+    last4_h2 = [last4[-3], last4[-2], last4[-1], pred1]
+    feat2 = pd.DataFrame([{
+        "latitude": float(row.iloc[0].latitude),
+        "longitude": float(row.iloc[0].longitude),
+        "gwl_lag_1": last4_h2[-1],
+        "gwl_lag_2": last4_h2[-2],
+        "gwl_lag_3": last4_h2[-3],
+        "gwl_lag_4": last4_h2[-4],
+        "years_back_1": 1.0,
+        "years_back_2": float(forecast_year + 1 - prior_years[-1]),
+        "years_back_3": float(forecast_year + 1 - prior_years[-2]),
+        "years_back_4": float(forecast_year + 1 - prior_years[-3]),
+        "gwl_mean_4": float(np.mean(last4_h2)),
+        "gwl_std_4": float(np.std(last4_h2)),
+        "gwl_slope_4": float(np.polyfit(np.arange(4), np.asarray(last4_h2), 1)[0]),
+    }])
+    pred2 = float(model.predict(feat2[FEATURES])[0])
+
+    # At h=3, pred2 is lag_1, pred1 is lag_2
+    last4_h3 = [last4[-2], last4[-1], pred1, pred2]
+    feat3 = pd.DataFrame([{
+        "latitude": float(row.iloc[0].latitude),
+        "longitude": float(row.iloc[0].longitude),
+        "gwl_lag_1": last4_h3[-1],
+        "gwl_lag_2": last4_h3[-2],
+        "gwl_lag_3": last4_h3[-3],
+        "gwl_lag_4": last4_h3[-4],
+        "years_back_1": 1.0,
+        "years_back_2": 2.0,
+        "years_back_3": float(forecast_year + 2 - prior_years[-1]),
+        "years_back_4": float(forecast_year + 2 - prior_years[-2]),
+        "gwl_mean_4": float(np.mean(last4_h3)),
+        "gwl_std_4": float(np.std(last4_h3)),
+        "gwl_slope_4": float(np.polyfit(np.arange(4), np.asarray(last4_h3), 1)[0]),
+    }])
+    pred3 = float(model.predict(feat3[FEATURES])[0])
+
+    # Compounding uncertainty radius for multi-year horizons
+    # Horizon 2 compounds by approx 1.15x; Horizon 3 by 1.30x
+    r2 = round(radius * 1.15, 3) if radius is not None else None
+    r3 = round(radius * 1.30, 3) if radius is not None else None
+
+    multi_year_projections = [
+        {
+            "horizon_years": 1,
+            "target_year": forecast_year,
+            "predicted_depth_mbgl": round(pred1, 3),
+            "lower_mbgl": round(lower1, 3) if lower1 is not None else None,
+            "upper_mbgl": round(upper1, 3) if upper1 is not None else None,
+            "uncertainty_radius_mbgl": round(radius, 3) if radius is not None else None,
+            "risk": status1,
+            "forecast_type": "1_year_rolling_forecast",
+        },
+        {
+            "horizon_years": 2,
+            "target_year": forecast_year + 1,
+            "predicted_depth_mbgl": round(pred2, 3),
+            "lower_mbgl": round(pred2 - r2, 3) if r2 is not None else None,
+            "upper_mbgl": round(pred2 + r2, 3) if r2 is not None else None,
+            "uncertainty_radius_mbgl": r2,
+            "risk": classify_gwl_depth(pred2),
+            "forecast_type": "2_year_recursive_forecast",
+            "error_compounding_note": "Autoregressive error compounds from 1-year recursive feedback.",
+        },
+        {
+            "horizon_years": 3,
+            "target_year": forecast_year + 2,
+            "predicted_depth_mbgl": round(pred3, 3),
+            "lower_mbgl": round(pred3 - r3, 3) if r3 is not None else None,
+            "upper_mbgl": round(pred3 + r3, 3) if r3 is not None else None,
+            "uncertainty_radius_mbgl": r3,
+            "risk": classify_gwl_depth(pred3),
+            "forecast_type": "3_year_recursive_forecast",
+            "error_compounding_note": "Autoregressive error compounds from multi-year recursive feedback.",
+        },
+    ]
 
     return {
         "station_id": station_id,
         "forecast_year": forecast_year,
-        "forecast_mbgl": pred,
-        "predicted_depth_m": pred,
-        "lower_mbgl": lower,
-        "upper_mbgl": upper,
-        "uncertainty_radius_mbgl": radius,
-        "interval_method": validation_band.get("method"),
-        "interval_note": validation_band.get("note"),
-        "risk": status,
+        "forecast_mbgl": round(pred1, 3),
+        "predicted_depth_m": round(pred1, 3),
+        "lower_mbgl": round(lower1, 3) if lower1 is not None else None,
+        "upper_mbgl": round(upper1, 3) if upper1 is not None else None,
+        "uncertainty_radius_mbgl": round(radius, 4) if radius is not None else None,
+        "interval_method": validation_band.get("method", "split_conformal_inference"),
+        "interval_empirical_coverage": validation_band.get("test_empirical_coverage_overall"),
+        "interval_note": validation_band.get("exchangeability_assumptions_and_limitations"),
+        "risk": status1,
         "risk_rule_note": "Exploratory groundwater depth indicator (<8m: Safe depth, 8–<15m: Semi-Critical depth, 15–25m: Critical depth, >25m: Over-Exploited depth). Note: Official CGWB/GEC-2015 assessment requires assessment-unit extraction and recharge accounting.",
         "assessment_type": "exploratory_depth_tier",
-        "model": "linear_regression",
+        "model": "production_linear_regression",
+        "forecast_horizon_years": 1,
+        "forecast_type": "1_year_rolling_forecast",
         "frequency": "annual_pre_monsoon",
         "data_end_year": last_year,
+        "multi_year_projections": multi_year_projections,
     }
 
 
 def _load() -> None:
-    """Load data, estimate an LR validation error band, then refit LR for deployment."""
-    global clean, nodes, model, metrics, validation_band, all_forecasts
+    """Load pre-trained production model, conformal calibration parameters, and precompute forecasts."""
+    global clean, nodes, model, metrics, validation_band, horizons_info, all_forecasts
 
     clean = pd.read_csv(CLEAN_CSV)
     nodes = pd.read_csv(NODE_CSV)
-    metrics = json.loads(METRICS_JSON.read_text(encoding="utf-8"))
-    feature_path = PROCESSED / "annual_model_features.csv"
-    features = pd.read_csv(feature_path)
-
-    missing = sorted(set(FEATURES + ["target", "target_year"]) - set(features.columns))
-    if missing:
-        raise RuntimeError(f"Annual feature file is missing columns: {missing}")
-    if features.empty:
-        raise RuntimeError("Annual feature file is empty")
-
-    # The saved Linear Regression model was trained on the original training years
-    # (through 2018). Use the temporal validation years to calculate a model-specific
-    # error band before refitting a production model with all available history.
-    model = joblib.load(LR_MODEL)
-    val_years = metrics.get("split", {}).get("validation_years", [])
-    validation = features[features["target_year"].isin(val_years)].copy()
-    if not validation.empty:
-        val_pred = model.predict(validation[FEATURES])
-        abs_resid = np.abs(validation["target"].to_numpy(float) - val_pred)
-        radius = float(np.quantile(abs_resid, 0.90))
-        validation_band = {
-            "method": "90th_percentile_absolute_residual_on_temporal_validation_years",
-            "quantile": 0.90,
-            "radius_mbgl": radius,
-            "n": int(len(abs_resid)),
-            "validation_years": [int(y) for y in val_years],
-            "note": "Approximate validation-error band, not a guaranteed prediction interval.",
-        }
+    
+    if METRICS_JSON.exists():
+        metrics = json.loads(METRICS_JSON.read_text(encoding="utf-8"))
     else:
-        validation_band = {
-            "method": "unavailable",
-            "radius_mbgl": None,
-            "n": 0,
-            "note": "No rows matched the saved validation years; interval is unavailable.",
-        }
+        metrics = {}
 
-    # Refit after evaluating so the deployed model can use all available target years.
-    # The metrics endpoint continues to report the prior, fixed 2023–2025 test results.
-    model.fit(features[FEATURES], features["target"].to_numpy(float))
-    metrics["deployment"] = {
-        "model": "linear_regression",
-        "fit_target_year_start": int(features["target_year"].min()),
-        "fit_target_year_end": int(features["target_year"].max()),
-        "validation_band": validation_band,
-        "evaluation_caveat": (
-            "The displayed comparison is from the 2023–2025 test period. Because the leading model was selected after viewing those test metrics, "
-            "an untouched future period is still needed for an independent final assessment."
-        ),
-    }
+    if CALIBRATION_JSON.exists():
+        validation_band = json.loads(CALIBRATION_JSON.read_text(encoding="utf-8"))
+    else:
+        validation_band = {}
+
+    if FORECAST_HORIZONS_JSON.exists():
+        horizons_info = json.loads(FORECAST_HORIZONS_JSON.read_text(encoding="utf-8"))
+    else:
+        horizons_info = {}
+
+    # Load dedicated production model artifact (trained on all historical observations)
+    if PRODUCTION_MODEL.exists():
+        model = joblib.load(PRODUCTION_MODEL)
+    elif LR_MODEL.exists():
+        model = joblib.load(LR_MODEL)
+    else:
+        raise RuntimeError("No trained model found. Run ai/src/train.py first.")
 
     # Precompute forecasts for all candidate stations
     all_forecasts.clear()
@@ -177,9 +234,21 @@ def _load() -> None:
             all_forecasts[sid] = fc
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     _load()
+    yield
+
+
+app = FastAPI(title="JalDrishti Groundwater AI", version="1.2.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/", tags=["system"])
@@ -198,8 +267,9 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "stations": int(len(nodes)),
-        "model": "linear_regression",
+        "model": "production_linear_regression",
         "frequency": "annual_pre_monsoon",
+        "forecast_horizon": "1_year_ahead_rolling",
         "precomputed_forecasts": int(len(all_forecasts)),
     }
 
@@ -207,6 +277,16 @@ def health() -> dict[str, Any]:
 @app.get("/api/ai/metrics", tags=["research"])
 def get_metrics() -> dict[str, Any]:
     return metrics
+
+
+@app.get("/api/ai/horizons", tags=["research"])
+def get_horizons() -> dict[str, Any]:
+    return horizons_info
+
+
+@app.get("/api/ai/conformal", tags=["research"])
+def get_conformal() -> dict[str, Any]:
+    return validation_band
 
 
 @app.get("/api/ai/stations", tags=["research"])

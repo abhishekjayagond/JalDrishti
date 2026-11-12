@@ -18,6 +18,9 @@
     "gwl_slope_4"
   ],
   "selected_model": "linear_regression",
-  "conformal_radius_mbgl": 4.9761,
-  "empirical_test_coverage": 0.9509
+  "production_model_file": "production_linear_regression.joblib",
+  "benchmark_model_file": "linear_regression.joblib",
+  "conformal_radius_mbgl": 5.767,
+  "empirical_test_coverage": 0.9649,
+  "forecast_horizon_primary": "1_year_ahead_rolling"
 }
