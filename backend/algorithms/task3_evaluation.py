@@ -1,18 +1,20 @@
 """
 algorithms/task3_evaluation.py — JalDrishti
-Task 3: Evaluate Groundwater Resources in Real Time
+Task 3: Evaluate Groundwater Resources & Depth Tiers
 
 Computes:
-  - Zone classification: Safe / Semi-Critical / Critical / Over-Exploited
+  - Exploratory groundwater depth indicator tier: Safe (<8m), Semi-Critical (8–<15m), Critical (15–25m), Over-Exploited (>25m)
   - Years to depletion per station
   - District and state-level health scorecards
   - Real-time resource availability index
 
-CGWB Classification Standard:
-  Safe          : level < 8m,  development < 70%
-  Semi-Critical : level 8–15m, development 70–90%
-  Critical      : level 15–25m, development 90–100%
-  Over-Exploited: level > 25m,  development > 100%
+METHODOLOGICAL DISTINCTION (Official CGWB/GEC-2015 vs. Project Depth Tiers):
+  - Official CGWB/GEC-2015 Category: Evaluates assessment units (taluks/blocks) using
+    Stage of Groundwater Extraction (SOE = extraction / recharge * 100%) and long-term
+    pre/post-monsoon water level trends.
+  - Project Depth Indicator Tier: Point-level depth-to-water categories (<8m, 8–15m,
+    15–25m, >25m) used as operational screening indicators when volumetric assessment-unit
+    draft and recharge accounting are not present.
 
 Called by: app/services/alerts.py and routes
 """
@@ -109,6 +111,12 @@ def evaluate_station(
         "status":                     status,
         "status_label":               STATUS_CONFIG[status]["label"],
         "status_color":               STATUS_CONFIG[status]["color"],
+        "assessment_type":            "official_gec2015_extraction_assessment" if stage_of_dev is not None else "exploratory_depth_tier",
+        "classification_note":        (
+            "Official CGWB GEC-2015 categorization using Stage of Groundwater Extraction."
+            if stage_of_dev is not None else
+            "Exploratory point-level groundwater depth indicator tier (<8m: Safe depth, 8–<15m: Semi-Critical depth, 15–25m: Critical depth, >25m: Over-Exploited depth). Note: Official CGWB/GEC-2015 categorization requires assessment-unit volumetric extraction and recharge accounting."
+        ),
         "stage_of_development_pct":   stage_of_dev,
         "annual_depletion_rate_m":    depletion["annual_rate_m"],
         "years_to_depletion":         years_to_depletion,
@@ -128,7 +136,7 @@ def evaluate_station(
 
 
 # ═══════════════════════════════════════════════════════════════
-# STATUS CLASSIFICATION (CGWB Standard)
+# STATUS CLASSIFICATION (Exploratory Depth Tier & GEC-2015 Indicator)
 # ═══════════════════════════════════════════════════════════════
 
 def _classify_status(
@@ -136,8 +144,8 @@ def _classify_status(
     stage_of_dev:    Optional[float],
 ) -> str:
     """
-    Classify groundwater status using CGWB standard.
-    Water level takes priority; stage_of_dev used as secondary indicator.
+    Classify groundwater status using exploratory depth indicator tiers
+    and statutory GEC-2015 stage-of-extraction thresholds.
     """
     # Primary: water level depth
     # Consistent thresholds: Safe <8 m; Semi-Critical 8–<15 m; Critical 15–25 m; Over-Exploited >25 m

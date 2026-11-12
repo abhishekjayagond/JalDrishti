@@ -36,16 +36,87 @@
       2017,
       2018
     ],
+    "train_samples": 7633,
     "validation_years": [
       2019,
       2020,
       2022
     ],
+    "validation_samples": 717,
     "test_years": [
       2023,
       2024,
       2025
+    ],
+    "test_samples": 997
+  },
+  "model_selection": {
+    "selected_model": "linear_regression",
+    "selection_criterion": "lowest_validation_mae_among_tabular_candidates",
+    "validation_ranking": [
+      {
+        "model": "lstm",
+        "mae": 2.2949728410966395,
+        "rmse": 2.9664861121850383,
+        "r2": 0.38221753205007936
+      },
+      {
+        "model": "linear_regression",
+        "mae": 2.469421015360807,
+        "rmse": 3.1893300321683586,
+        "r2": 0.2859150728465579
+      },
+      {
+        "model": "random_forest",
+        "mae": 2.54979181408033,
+        "rmse": 3.2974643368954935,
+        "r2": 0.2366720659022612
+      },
+      {
+        "model": "stgnn",
+        "mae": 2.8139266622469683,
+        "rmse": 3.5017034905897177,
+        "r2": 0.139185292643635
+      },
+      {
+        "model": "persistence",
+        "mae": 2.9847977684797766,
+        "rmse": 3.9626323260158136,
+        "r2": -0.10234743892791709
+      }
     ]
+  },
+  "validation_metrics": {
+    "persistence": {
+      "mae": 2.9847977684797766,
+      "rmse": 3.9626323260158136,
+      "r2": -0.10234743892791709,
+      "n": 717
+    },
+    "linear_regression": {
+      "mae": 2.469421015360807,
+      "rmse": 3.1893300321683586,
+      "r2": 0.2859150728465579,
+      "n": 717
+    },
+    "random_forest": {
+      "mae": 2.54979181408033,
+      "rmse": 3.2974643368954935,
+      "r2": 0.2366720659022612,
+      "n": 717
+    },
+    "lstm": {
+      "mae": 2.2949728410966395,
+      "rmse": 2.9664861121850383,
+      "r2": 0.38221753205007936,
+      "n": 717
+    },
+    "stgnn": {
+      "mae": 2.8139266622469683,
+      "rmse": 3.5017034905897177,
+      "r2": 0.139185292643635,
+      "n": 717
+    }
   },
   "metrics": {
     "persistence": {
@@ -55,33 +126,56 @@
       "n": 997
     },
     "linear_regression": {
-      "mae": 1.6298709759270922,
-      "rmse": 2.4137535911103463,
-      "r2": 0.5801176355312141,
+      "mae": 1.6298709759270917,
+      "rmse": 2.413753591110346,
+      "r2": 0.5801176355312143,
       "n": 997
     },
     "random_forest": {
-      "mae": 1.769884018007556,
-      "rmse": 2.5587021886345056,
-      "r2": 0.5281746730151007,
+      "mae": 1.7698719245844292,
+      "rmse": 2.558697118336082,
+      "r2": 0.5281765429418566,
       "n": 997
     },
     "lstm": {
-      "mae": 1.7117705859520371,
-      "rmse": 2.4430277565993537,
-      "r2": 0.5698711540914204,
+      "mae": 1.6585228330976027,
+      "rmse": 2.4393815338388354,
+      "r2": 0.5711541319082285,
       "n": 997
     },
     "stgnn": {
-      "mae": 2.369788779919162,
-      "rmse": 3.158594149727986,
-      "r2": 0.28099912390115345,
+      "mae": 2.37597089117335,
+      "rmse": 3.1346537433101918,
+      "r2": 0.29185708107004105,
       "n": 997
     }
+  },
+  "conformal": {
+    "method": "split_conformal_inference",
+    "calibration_model": "linear_regression",
+    "calibration_years": [
+      2019,
+      2020,
+      2022
+    ],
+    "calibration_samples": 717,
+    "nominal_confidence_level": 0.9,
+    "uncertainty_radius_mbgl": 4.9761,
+    "radius_mbgl": 4.9761,
+    "test_years": [
+      2023,
+      2024,
+      2025
+    ],
+    "test_samples": 997,
+    "test_empirical_coverage": 0.9509,
+    "average_interval_width_mbgl": 9.9523,
+    "note": "Calibrated on temporal validation holdout (2019, 2020, 2022) of selected Linear Regression model. Evaluated on unseen 2023\u20132025 test holdout."
   },
   "model_notes": {
     "target": "next calendar-year pre-monsoon groundwater depth (mbgl)",
     "historical_source": "CGWB pre-monsoon Karnataka extraction from Pre-monsoon_WL_1994-2025.pdf",
-    "annual_frequency": true
+    "annual_frequency": true,
+    "data_leakage_safeguards": "Strictly chronological train (<=2018), validation (2019-2022), and test (2023-2025). Missing value imputation medians and scalers fitted strictly on training data."
   }
 }

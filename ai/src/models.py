@@ -28,7 +28,6 @@ from .metrics import regression_metrics
 FEATURES = ["latitude", "longitude", "gwl_lag_1", "gwl_lag_2", "gwl_lag_3", "gwl_lag_4", "years_back_1", "years_back_2", "years_back_3", "years_back_4", "gwl_mean_4", "gwl_std_4", "gwl_slope_4"]
 
 
-
 class LSTMRegressor(nn.Module):
     def __init__(self, input_size: int = 2, hidden_size: int = 32):
         super().__init__()
@@ -62,9 +61,9 @@ def split_target_years(df: pd.DataFrame):
     years = sorted(df.target_year.unique())
     if len(years) < 5:
         raise ValueError("Not enough target years")
-    train_years = [y for y in years if y <= 2018]
-    val_years = [y for y in years if 2019 <= y <= 2022]
-    test_years = [y for y in years if y >= 2023]
+    train_years = [int(y) for y in years if y <= 2018]
+    val_years = [int(y) for y in years if 2019 <= y <= 2022]
+    test_years = [int(y) for y in years if y >= 2023]
     return train_years, val_years, test_years
 
 
@@ -72,31 +71,46 @@ def fit_tabular_models(features: pd.DataFrame, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     train_years, val_years, test_years = split_target_years(features)
     cols = FEATURES
-    results = {}
-    preds = {}
+    val_results = {}
+    test_results = {}
+    val_preds = {}
+    test_preds = {}
+    
+    tr = features[features.target_year.isin(train_years)]
+    va = features[features.target_year.isin(val_years)]
+    te = features[features.target_year.isin(test_years)]
+
     for name, model in [
         ("linear_regression", LinearRegression()),
         ("random_forest", RandomForestRegressor(n_estimators=350, max_depth=16, min_samples_leaf=2, random_state=42, n_jobs=-1)),
     ]:
-        tr = features[features.target_year.isin(train_years)]
-        te = features[features.target_year.isin(test_years)]
         model.fit(tr[cols], tr.target)
-        p = model.predict(te[cols])
-        results[name] = regression_metrics(te.target, p)
-        preds[name] = pd.DataFrame({"station_id": te.station_id.to_numpy(), "target_year": te.target_year.to_numpy(), "y_true": te.target.to_numpy(), "prediction": p})
+        p_val = model.predict(va[cols])
+        p_test = model.predict(te[cols])
+        
+        val_results[name] = regression_metrics(va.target, p_val)
+        test_results[name] = regression_metrics(te.target, p_test)
+        
+        val_preds[name] = pd.DataFrame({"station_id": va.station_id.to_numpy(), "target_year": va.target_year.to_numpy(), "y_true": va.target.to_numpy(), "prediction": p_val})
+        test_preds[name] = pd.DataFrame({"station_id": te.station_id.to_numpy(), "target_year": te.target_year.to_numpy(), "y_true": te.target.to_numpy(), "prediction": p_test})
+        
         joblib.dump(model, out_dir / f"{name}.joblib")
-    return results, preds, train_years, val_years, test_years
+        
+    return val_results, test_results, val_preds, test_preds, train_years, val_years, test_years
 
 
-def _make_sequences(clean: pd.DataFrame, nodes: pd.DataFrame, window: int = 5):
+def _make_sequences(clean: pd.DataFrame, nodes: pd.DataFrame, window: int = 5, train_cutoff_year: int = 2018):
     ids = nodes.sort_values("station_id").station_id.tolist()
     wide = clean[clean.station_id.isin(ids)].pivot(index="year", columns="station_id", values="water_level_mbgl").sort_index().reindex(columns=ids)
     mask = wide.notna().astype(np.float32)
-    # Raw missing values are filled with column medians; mask is supplied to the network.
-    fill = wide.median().fillna(wide.stack().median())
+    
+    # Strictly leakage-free: compute missing value median imputations ONLY on training years (<= train_cutoff_year)
+    train_wide = wide[wide.index <= train_cutoff_year]
+    fill = train_wide.median().fillna(train_wide.stack().median())
     vals = wide.fillna(fill).to_numpy(np.float32)
     m = mask.to_numpy(np.float32)
     years = wide.index.to_numpy()
+    
     X, y, target_years, ymask = [], [], [], []
     for idx in range(window, len(years)):
         target = vals[idx]
@@ -108,7 +122,7 @@ def _make_sequences(clean: pd.DataFrame, nodes: pd.DataFrame, window: int = 5):
     return np.asarray(X), np.asarray(y), np.asarray(ymask), np.asarray(target_years), ids, fill.to_numpy(np.float32)
 
 
-def _train_torch(model, X, y, ymask, train_mask, val_mask, criterion_mask=True, epochs=30, batch_size=16, A=None):
+def _train_torch(model, X, y, ymask, train_mask, val_mask, criterion_mask=True, epochs=35, batch_size=16, A=None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
@@ -146,7 +160,7 @@ def _train_torch(model, X, y, ymask, train_mask, val_mask, criterion_mask=True, 
 
 
 def fit_lstm(clean: pd.DataFrame, nodes: pd.DataFrame, out_dir: Path):
-    Xg, yg, mg, ty, ids, fill = _make_sequences(clean, nodes, window=5)
+    Xg, yg, mg, ty, ids, fill = _make_sequences(clean, nodes, window=5, train_cutoff_year=2018)
     # Flatten graph samples to node samples.
     X = Xg.transpose(0, 2, 1, 3).reshape(-1, Xg.shape[1], 2)
     y = yg.reshape(-1)
@@ -155,28 +169,42 @@ def fit_lstm(clean: pd.DataFrame, nodes: pd.DataFrame, out_dir: Path):
     target_year_repeat = np.repeat(ty, len(ids))
     keep = masks > 0
     X, y, target_year_repeat, station_repeat = X[keep], y[keep], target_year_repeat[keep], station_repeat[keep]
-    scaler = StandardScaler()
-    # scaler on flattened training sequences only
+    
+    # Strictly fit scaler on training sequence data only
     tr_mask = target_year_repeat <= 2018
+    scaler = StandardScaler()
     scaler.fit(X[tr_mask].reshape(-1, 2))
     Xs = scaler.transform(X.reshape(-1, 2)).reshape(X.shape)
+    
     tr = target_year_repeat <= 2018
     va = (target_year_repeat >= 2019) & (target_year_repeat <= 2022)
     te = target_year_repeat >= 2023
+    
+    torch.manual_seed(42)
+    np.random.seed(42)
     model = LSTMRegressor(2)
     model, device = _train_torch(model, Xs, y, np.ones_like(y), tr, va, criterion_mask=False, epochs=35, batch_size=128)
     model.eval()
+    
     with torch.no_grad():
-        p = model(torch.tensor(Xs[te], device=device)).cpu().numpy()
-    metrics = regression_metrics(y[te], p)
+        p_val = model(torch.tensor(Xs[va], device=device)).cpu().numpy()
+        p_test = model(torch.tensor(Xs[te], device=device)).cpu().numpy()
+        
+    val_metrics = regression_metrics(y[va], p_val)
+    test_metrics = regression_metrics(y[te], p_test)
+    
     torch.save({"state_dict": model.state_dict(), "scaler_mean": scaler.mean_, "scaler_scale": scaler.scale_}, out_dir / "lstm.pt")
-    pred = pd.DataFrame({"station_id": [ids[i] for i in station_repeat[te]], "target_year": target_year_repeat[te], "y_true": y[te], "prediction": p})
-    return metrics, pred
+    
+    val_pred = pd.DataFrame({"station_id": [ids[i] for i in station_repeat[va]], "target_year": target_year_repeat[va], "y_true": y[va], "prediction": p_val})
+    test_pred = pd.DataFrame({"station_id": [ids[i] for i in station_repeat[te]], "target_year": target_year_repeat[te], "y_true": y[te], "prediction": p_test})
+    
+    return val_metrics, test_metrics, val_pred, test_pred
 
 
 def fit_stgnn(clean: pd.DataFrame, nodes: pd.DataFrame, A: np.ndarray, out_dir: Path):
-    X, y, m, ty, ids, fill = _make_sequences(clean, nodes, window=5)
-    # Scale groundwater values using only the training portion. Mask feature stays 0/1.
+    X, y, m, ty, ids, fill = _make_sequences(clean, nodes, window=5, train_cutoff_year=2018)
+    
+    # Scale groundwater values using strictly the training portion. Mask feature stays 0/1.
     tr_samples = ty <= 2018
     train_vals = X[tr_samples, :, :, 0]
     mu = float(train_vals.mean())
@@ -184,22 +212,44 @@ def fit_stgnn(clean: pd.DataFrame, nodes: pd.DataFrame, A: np.ndarray, out_dir: 
     Xs = X.copy()
     Xs[..., 0] = (Xs[..., 0] - mu) / sigma
     ys = (y - mu) / sigma
+    
     tr = ty <= 2018
     va = (ty >= 2019) & (ty <= 2022)
     te = ty >= 2023
+    
+    torch.manual_seed(42)
+    np.random.seed(42)
     model = STGNNRegressor(2)
     model, device = _train_torch(model, Xs, ys, m, tr, va, criterion_mask=True, epochs=45, batch_size=8, A=A)
     model.eval()
     A_t = torch.tensor(A, dtype=torch.float32, device=device)
+    
     with torch.no_grad():
-        p = model(torch.tensor(Xs[te], device=device), A_t).cpu().numpy() * sigma + mu
-    truth = y[te]
-    mm = m[te]
-    metrics = regression_metrics(truth[mm > 0], p[mm > 0])
+        p_val_raw = model(torch.tensor(Xs[va], device=device), A_t).cpu().numpy() * sigma + mu
+        p_test_raw = model(torch.tensor(Xs[te], device=device), A_t).cpu().numpy() * sigma + mu
+        
+    truth_val = y[va]
+    m_val = m[va]
+    val_metrics = regression_metrics(truth_val[m_val > 0], p_val_raw[m_val > 0])
+    
+    truth_test = y[te]
+    m_test = m[te]
+    test_metrics = regression_metrics(truth_test[m_test > 0], p_test_raw[m_test > 0])
+    
     torch.save({"state_dict": model.state_dict(), "mu": mu, "sigma": sigma, "window": 5, "hidden": 32}, out_dir / "stgnn.pt")
-    pred = []
+    
+    val_pred = []
+    for si, yr in enumerate(ty[va]):
+        for j, sid in enumerate(ids):
+            if m[va][si, j] > 0:
+                val_pred.append((sid, int(yr), float(y[va][si, j]), float(p_val_raw[si, j])))
+    val_pred_df = pd.DataFrame(val_pred, columns=["station_id", "target_year", "y_true", "prediction"])
+    
+    test_pred = []
     for si, yr in enumerate(ty[te]):
         for j, sid in enumerate(ids):
             if m[te][si, j] > 0:
-                pred.append((sid, int(yr), float(y[te][si, j]), float(p[si, j])))
-    return metrics, pd.DataFrame(pred, columns=["station_id", "target_year", "y_true", "prediction"])
+                test_pred.append((sid, int(yr), float(y[te][si, j]), float(p_test_raw[si, j])))
+    test_pred_df = pd.DataFrame(test_pred, columns=["station_id", "target_year", "y_true", "prediction"])
+    
+    return val_metrics, test_metrics, val_pred_df, test_pred_df

@@ -60,6 +60,8 @@ data/processed/
 !ai/data/processed/annual_nodes.csv
 !ai/data/processed/annual_station_order.json
 !ai/data/processed/phase1_karnataka_annual_clean.csv
+!groundwater_literature_comparison.csv
+!jaldrishti_parameter_catalog.csv
 
 # ── Whitelist: Official Indian Map SVG Vector Asset ──────────────────────────
 !india_map_with_state_borders.svg

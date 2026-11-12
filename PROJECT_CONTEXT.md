@@ -16,12 +16,12 @@
 ### 1.1 Problem Statement
 JalDrishti addresses **Central Ground Water Board (CGWB) Problem Statement #25068**: *Real-time telemetry analysis and multi-year aquifer forecasting from Digital Water Level Recorder (DWLR) networks*. 
 
-Groundwater provides 63% of India's irrigation water and 85% of rural drinking supplies. India operates over 5,260 automated DWLR stations transmitting hydrostatic water-level measurements. JalDrishti ingests this telemetry, estimates dynamic monsoon recharge, classifies aquifer depletion per CGWB norms, and forecasts upcoming seasonal water levels with uncertainty bounds.
+Groundwater provides 63% of India's irrigation water and 85% of rural drinking supplies. Nationally, the Central Ground Water Board (CGWB) operates an automated telemetry network of over 5,260 DWLR stations under the National Hydrology Project. JalDrishti is architected to ingest this continuous telemetry stream, estimate dynamic monsoon recharge, evaluate depth vulnerability and GEC extraction norms, and forecast multi-year seasonal water levels with transparent uncertainty bounds. In its current implementation baseline, the database houses 390 verified real Karnataka CGWB observation wells (1994–2025 records) and 78 nationwide benchmark fallback stations for UI continuity.
 
 ### 1.2 Core Capabilities
 1. **Task 1: Water Table Fluctuation (WTF) Analytics:** Real-time water depth trend analysis, 7-day moving averages, drawdown velocities, and localized over-extraction anomaly detection.
 2. **Task 2: Dynamic Monsoon Recharge Estimation:** Correlation between India Meteorological Department (IMD) rainfall events and aquifer recovery curves across 5 geological formations (Alluvial, Hard Rock, Basalt, Granite, Sandstone).
-3. **Task 3: CGWB Resource Depletion Evaluation:** Official GEC-2015 categorization (Safe, Semi-Critical, Critical, Over-Exploited), Resource Availability Index (RAI), and years-to-depletion projection.
+3. **Task 3: Aquifer Resource Evaluation & Depth Indicators:** Standardized exploratory depth indicator tiers (Safe <8m, Semi-Critical 8–<15m, Critical 15–25m, Over-Exploited >25m), Resource Availability Index (RAI), and years-to-depletion projection. Explicitly distinguishes point-level depth screening from statutory assessment-unit GEC-2015 extraction categorization.
 4. **Task 4: AI & Spatial-Temporal Groundwater Forecasting:** Multi-year pre-monsoon water depth prediction with conformal/residual uncertainty bands.
 5. **Interactive Geospatial Console:** Geographically accurate Indian base map displaying verified telemetry wells and benchmark centroids, state/district health scorecards, active alerts, and CSV exports.
 
@@ -178,13 +178,13 @@ The TimescaleDB database contains **468 total groundwater stations** across **26
    - **Coordinates:** Exact survey well latitude and longitude coordinates.
    - **Data Quality Flag:** Marked with `data_quality_flag='HISTORICAL_ANNUAL'`.
 
-2. **Simulated Benchmark Fallback Stations (78 Stations):**
+2. **Synthetic Benchmark Fallback Stations (78 Demonstration Nodes):**
    - **Coverage:** 26 Indian states (3 stations per state, covering Karnataka and 25 other states).
-   - **Station IDs:** Prefixed with `CGWB_<STATE_CODE>_0001` through `0003` (e.g. `CGWB_MH_0001`, `CGWB_RJ_0001`, `CGWB_KA_0001`).
-   - **Data Nature:** **Simulated time-series telemetry** generated with realistic regional base depths, seasonal monsoon recharge recovery dips, and diurnal fluctuations.
+   - **Station IDs:** Prefixed with `CGWB_<STATE_CODE>_0001` through `0003` (legacy demo schema e.g. `CGWB_MH_0001`, `CGWB_RJ_0001`, `CGWB_KA_0001`).
+   - **Data Nature:** **Synthetic seasonal telemetry** generated with realistic regional base depths, seasonal monsoon recharge recovery dips, and diurnal fluctuations.
    - **Purpose:** Enables end-to-end testing of national dashboards, state rankings, and alerts even when public India-WRIS APIs are throttled or unauthenticated.
    - **Coordinates:** Approximate district centroid / headquarters coordinates (calibrated in `data/scripts/update_benchmark_coordinates.py`).
-   - **Visual Distinction:** Rendered on the map with a dashed outer focus ring and tooltips explicitly stating *"Approximate Benchmark Placement"*. Never presented as verified borehole locations.
+   - **Visual Distinction & Provenance Guarantee:** Rendered on the map with a dashed outer focus ring and tooltips explicitly stating *"Synthetic Benchmark Fallback Node — Not a verified borehole"*. Never presented as verified government wells. **Crucially, these 78 synthetic nodes are 100% excluded from AI model training, validation, and accuracy metrics.**
 
 3. **Total Calculation:**
    $$\text{Total Stations} = 390\text{ (Real Karnataka CGWB)} + 78\text{ (Benchmark Fallback across 26 states)} = \mathbf{468\text{ stations}}$$

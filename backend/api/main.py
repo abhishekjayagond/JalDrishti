@@ -313,7 +313,7 @@ def state_ranking(db: Session=Depends(get_db)):
             "avg_water_level_m": round(avg, 2),
             "min_water_level_m": round(float(row.min_level), 2) if row.min_level else None,
             "max_water_level_m": round(float(row.max_level), 2) if row.max_level else None,
-            "status": status, "rai": rai,
+            "status": status, "assessment_type": "exploratory_depth_tier", "rai": rai,
         })
     results.sort(key=lambda x: x["rai"])
     return {"total_states": len(results), "states": results}
@@ -339,7 +339,7 @@ def district_ranking(state: str, db: Session=Depends(get_db)):
         avg = float(row.avg_level)
         status = "safe" if avg < 8 else "semi_critical" if avg < 15 else "critical" if avg <= 25 else "over_exploited"
         rai = round(max(0, min(100, 100 - (avg / 80) * 100)), 1)
-        results.append({"district": row.district, "total_stations": int(row.total_stations), "avg_water_level_m": round(avg, 2), "status": status, "rai": rai})
+        results.append({"district": row.district, "total_stations": int(row.total_stations), "avg_water_level_m": round(avg, 2), "status": status, "assessment_type": "exploratory_depth_tier", "rai": rai})
     results.sort(key=lambda x: x["rai"])
     return {"state": state, "total_districts": len(results), "districts": results}
 
@@ -354,11 +354,11 @@ def export_summary_csv(db: Session=Depends(get_db)):
     latest_map = {r.station_id: float(r.avg_level) for r in latest if r.avg_level}
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["station_id","station_name","state","district","block","latitude","longitude","aquifer_type","well_depth_m","avg_water_level_m","cgwb_status"])
+    w.writerow(["station_id","station_name","state","district","block","latitude","longitude","aquifer_type","well_depth_m","avg_water_level_m","depth_tier_status","assessment_type"])
     for s in stations:
         avg = latest_map.get(s.station_id)
         status = "no_data" if avg is None else "safe" if avg < 8 else "semi_critical" if avg < 15 else "critical" if avg <= 25 else "over_exploited"
-        w.writerow([s.station_id, s.station_name, s.state, s.district, s.block, s.latitude, s.longitude, s.aquifer_type, s.well_depth_m, round(avg,2) if avg else "", status])
+        w.writerow([s.station_id, s.station_name, s.state, s.district, s.block, s.latitude, s.longitude, s.aquifer_type, s.well_depth_m, round(avg,2) if avg else "", status, "exploratory_depth_tier"])
     out.seek(0)
     return StreamingResponse(iter([out.getvalue()]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=jaldrishti_all_stations.csv"})
 

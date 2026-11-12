@@ -668,10 +668,10 @@ export function Task3Detail({ station, onBack }) {
 
   const s = STATUS[data?.status] || STATUS.unknown;
   const cgwbZones = [
-    { key: 'safe',           pct: 40, label: 'Safe (< 8m)' },
-    { key: 'semi_critical',  pct: 25, label: 'Semi-Critical (8–15m)' },
-    { key: 'critical',       pct: 20, label: 'Critical (15–25m)' },
-    { key: 'over_exploited', pct: 15, label: 'Over-Exploited (> 25m)' },
+    { key: 'safe',           pct: 40, label: 'Safe Depth (< 8m)' },
+    { key: 'semi_critical',  pct: 25, label: 'Semi-Critical Depth (8–15m)' },
+    { key: 'critical',       pct: 20, label: 'Critical Depth (15–25m)' },
+    { key: 'over_exploited', pct: 15, label: 'Over-Exploited Depth (> 25m)' },
   ];
 
   const deplRate = data?.annual_depletion_rate_m;
@@ -764,7 +764,7 @@ export function Task3Detail({ station, onBack }) {
 
           <div className="charts-row">
             <div className="chart-card">
-              <div className="cc-title"><IconBuilding style={{ marginRight: '6px' }} /> CGWB Classification &amp; RAI</div>
+              <div className="cc-title"><IconBuilding style={{ marginRight: '6px' }} /> Depth Tier &amp; RAI Score</div>
               <Gauge value={data.resource_availability_index || 0} max={100} color={s.color} label="Resource Availability Index" />
               <div className="status-display" style={{ borderColor: `${s.color}35`, background: `${s.color}08` }}>
                 <div className="sd-dot" style={{ background: s.color }} />
@@ -776,8 +776,8 @@ export function Task3Detail({ station, onBack }) {
             </div>
 
             <div className="chart-card">
-              <div className="cc-title"><IconChart style={{ marginRight: '6px' }} /> National CGWB Classification Matrix</div>
-              <div className="cc-sub">National category breakdown under Central Ground Water Board guidelines</div>
+              <div className="cc-title"><IconChart style={{ marginRight: '6px' }} /> Depth Indicator Tiers &amp; GEC Matrix</div>
+              <div className="cc-sub">Exploratory well depth ranges vs. statutory GEC-2015 extraction guidelines</div>
               <PieChart slices={cgwbZones.map(z => ({ label: z.label, value: z.pct, color: STATUS[z.key].color }))} size={140} />
               <div className="pie-legend">
                 {cgwbZones.map(z => (
@@ -847,7 +847,7 @@ export function Task3Detail({ station, onBack }) {
             </div>
 
             <div className="chart-card">
-              <div className="cc-title"><IconClipboard style={{ marginRight: '6px' }} /> CGWB Standards Criteria</div>
+              <div className="cc-title"><IconClipboard style={{ marginRight: '6px' }} /> Depth Indicators &amp; GEC-2015 Criteria</div>
               <div className="thresholds">
                 {[
                   { label: 'Safe',           range: '< 8m',   stage: '< 70%',   color: '#16a34a', key: 'safe' },
@@ -864,7 +864,10 @@ export function Task3Detail({ station, onBack }) {
                   </div>
                 ))}
               </div>
-              <div className="summary-text" style={{ marginTop: '1rem' }}>{data.summary || 'Resource evaluation complete.'}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4 }}>
+                *Note: Depth thresholds (&lt;8m, 8–15m, 15–25m, &gt;25m) are operational depth indicators. Official CGWB/GEC-2015 assessment requires assessment-unit volumetric extraction and recharge accounting.
+              </div>
+              <div className="summary-text" style={{ marginTop: '0.75rem' }}>{data.summary || 'Resource evaluation complete.'}</div>
             </div>
           </div>
         </>

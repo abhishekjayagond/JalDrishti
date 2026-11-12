@@ -12,9 +12,9 @@
 
 ## Executive Summary
 
-Groundwater accounts for **63% of India's irrigation water** and **85% of rural drinking water supply**. Across India, over 5,260 Digital Water Level Recorder (DWLR) telemetry stations continuously transmit hydrostatic water level observations. Historically, turning this high-frequency sensor telemetry into actionable, forward-looking intelligence has been hindered by fragmented data pipelines and inconsistent analytical frameworks.
+Groundwater accounts for **63% of India's irrigation water** and **85% of rural drinking water supply**. Across India, over 5,260 Digital Water Level Recorder (DWLR) stations form the national automated groundwater telemetry network deployed by the Central Ground Water Board (CGWB) under the National Hydrology Project. Historically, turning sensor telemetry and sparse historical records into actionable, forward-looking intelligence has been hindered by fragmented data pipelines and inconsistent analytical frameworks.
 
-**JalDrishti** provides an end-to-end operational platform that transforms continuous DWLR sensor telemetry, IMD precipitation data, and hydrogeological parameters into real-time aquifer evaluations and scientific multi-year forecasts.
+**JalDrishti** provides an operational platform that bridges real-time telemetry analytics, dynamic recharge modeling, and scientific multi-year AI forecasting. In its current implementation baseline, JalDrishti operates on **390 verified real Karnataka CGWB observation wells** (with 32 years of annual pre-monsoon records spanning 1994–2025) and **78 nationwide benchmark fallback stations** (seeded with sinusoidal signals across 26 states for UI continuity), while providing ingestion pipelines ready to receive live continuous DWLR telemetry streams.
 
 ---
 
@@ -31,20 +31,22 @@ Groundwater accounts for **63% of India's irrigation water** and **85% of rural 
 - Derives net recharge volumes and recharge rates (m/day) across distinct aquifer formations (Alluvial, Hard Rock, Basalt, Granite, Sandstone).
 - Detects recharge lag times and identifies critically stressed zones experiencing zero or negative seasonal recovery.
 
-### 3. CGWB Resource Depletion Evaluation
-- Implements standard Central Ground Water Board classification logic:
-  - **Safe**: Water depth < 8 m, development stage < 70%
-  - **Semi-Critical**: Water depth 8–15 m, development stage 70–90%
-  - **Critical**: Water depth 15–25 m, development stage 90–100%
-  - **Over-Exploited**: Water depth > 25 m, development stage > 100%
-- Estimates depletion velocity and projected years-to-depletion.
-- Computes aggregated District and State Resource Availability Indices (RAI).
+### 3. Aquifer Resource Evaluation & Depth Indicators
+- Implements standardized exploratory groundwater depth indicator tiers:
+  - **Safe Depth**: Water depth < 8 m bgl
+  - **Semi-Critical Depth**: Water depth 8–15 m bgl
+  - **Critical Depth**: Water depth 15–25 m bgl
+  - **Over-Exploited Depth**: Water depth > 25 m bgl
+- Explicitly distinguishes point-level operational depth indicators from statutory CGWB/GEC-2015 assessment-unit categorization (which requires Stage of Groundwater Extraction % = gross extraction / recharge × 100% and decadal water level trends across entire taluks/blocks).
+- Computes depletion rate velocity (m/year), estimated years-to-depletion, and Resource Availability Index (RAI).
 
 ### 4. Machine Learning & Spatial-Temporal AI Forecasting
-- Pre-monsoon groundwater level forecasting trained on historical Karnataka DWLR records (1994–2025).
-- Model benchmarks comparing persistence baselines, Linear Regression, Random Forest, LSTM, and Spatio-Temporal Graph Neural Networks.
-- Calibrated 90th-percentile validation error bands providing transparent uncertainty quantification.
-- Exploratory risk classification for upcoming seasonal water years.
+- Pre-monsoon groundwater level forecasting trained on 390 long-history Karnataka CGWB observation wells (1994–2025).
+- Leakage-safe chronological validation split: Training (1998–2018, $n=7,633$), Validation (2019–2022, $n=717$), and Test holdout (2023–2025, $n=997$).
+- Imputers and scalers fitted strictly on training data (preventing temporal data leakage).
+- Model selection performed on the separate validation period, selecting Linear Regression ($R^2 = 0.580$, $\text{MAE} = 1.63\text{ m}$ on unseen test set).
+- Split conformal prediction calibrated on validation residuals, providing transparent 90% uncertainty envelopes ($q = 4.98\text{ m}$, 95.1% verified empirical test coverage).
+- Strictly distinguishes verified Karnataka observation wells from synthetic nationwide benchmark demo nodes (which are 100% excluded from model training and evaluation).
 
 ### 5. Automated Early Warning & Alert Engine
 - Continuous telemetry scanning for rapid drawdown spikes and sensor timeouts.

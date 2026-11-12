@@ -198,9 +198,11 @@ npm run build
 - **Extension:** TimescaleDB 2.28.3 (`CREATE EXTENSION timescaledb;`).
 - **Hypertables:** `dwlr_readings` is partitioned into 7-day chunks on the `timestamp` column.
 - **Seeded Data:**
-  - 468 CGWB groundwater monitoring stations across 26 Indian states.
+  - 468 total monitoring stations across 26 Indian states:
+    - **390 verified real Karnataka CGWB observation wells** (32 years of annual pre-monsoon records, 1994–2025).
+    - **78 nationwide benchmark fallback stations** (3 per state across 26 states, seeded with seasonal sinusoidal telemetry for UI continuity; strictly excluded from AI training).
   - Over 2,638,000 DWLR water level time-series readings.
-  - Spatial coordinates verified against CGWB benchmarks.
+  - Spatial coordinates mapped and verified within Indian state vector boundaries.
 
 ---
 

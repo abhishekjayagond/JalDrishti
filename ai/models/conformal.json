@@ -1,7 +1,22 @@
 {
-  "method": "split_conformal_style",
-  "calibration": "absolute_persistence_residual",
-  "quantile": 0.9,
-  "radius_mbgl": 6.02,
-  "n": 717
+  "method": "split_conformal_inference",
+  "calibration_model": "linear_regression",
+  "calibration_years": [
+    2019,
+    2020,
+    2022
+  ],
+  "calibration_samples": 717,
+  "nominal_confidence_level": 0.9,
+  "uncertainty_radius_mbgl": 4.9761,
+  "radius_mbgl": 4.9761,
+  "test_years": [
+    2023,
+    2024,
+    2025
+  ],
+  "test_samples": 997,
+  "test_empirical_coverage": 0.9509,
+  "average_interval_width_mbgl": 9.9523,
+  "note": "Calibrated on temporal validation holdout (2019, 2020, 2022) of selected Linear Regression model. Evaluated on unseen 2023\u20132025 test holdout."
 }

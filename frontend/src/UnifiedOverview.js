@@ -54,7 +54,7 @@ function NationalAquiferDistributionChart({ stations = [], avgDepth = '10.42' })
         <div>
           <span className="eyebrow">Empirical Telemetry Distribution</span>
           <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-primary)', letterSpacing: '0px' }}>
-            National Aquifer Storage Categorization
+            National Depth Indicator Distribution
           </h2>
         </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--color-surface)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '12px' }}>
@@ -401,8 +401,8 @@ export default function UnifiedOverview({
             </div>
           </div>
           <p className="page-desc">
-            Empirical telemetry monitoring and AI predictive analytics across 468 observation wells in India.
-            Track water table fluctuations, dynamic recharge, and aquifer vulnerability.
+            Empirical observation records and predictive analytics across 390 long-history Karnataka wells and 78 nationwide benchmark fallback nodes.
+            Track water table fluctuations, dynamic recharge, and depth vulnerability.
           </p>
         </div>
       )}
