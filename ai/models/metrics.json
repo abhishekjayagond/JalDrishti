@@ -1,0 +1,87 @@
+{
+  "data": {
+    "raw_rows": 28579,
+    "clean_station_years": 28544,
+    "candidate_stations": 390,
+    "graph_nodes": 390,
+    "years": [
+      1994,
+      2025
+    ],
+    "missing_calendar_years": [
+      2021
+    ]
+  },
+  "split": {
+    "train_years": [
+      1998,
+      1999,
+      2000,
+      2001,
+      2002,
+      2003,
+      2004,
+      2005,
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018
+    ],
+    "validation_years": [
+      2019,
+      2020,
+      2022
+    ],
+    "test_years": [
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "metrics": {
+    "persistence": {
+      "mae": 2.1569307923771315,
+      "rmse": 3.2537538231749306,
+      "r2": 0.23702351852985215,
+      "n": 997
+    },
+    "linear_regression": {
+      "mae": 1.6298709759270922,
+      "rmse": 2.4137535911103463,
+      "r2": 0.5801176355312141,
+      "n": 997
+    },
+    "random_forest": {
+      "mae": 1.769884018007556,
+      "rmse": 2.5587021886345056,
+      "r2": 0.5281746730151007,
+      "n": 997
+    },
+    "lstm": {
+      "mae": 1.7117705859520371,
+      "rmse": 2.4430277565993537,
+      "r2": 0.5698711540914204,
+      "n": 997
+    },
+    "stgnn": {
+      "mae": 2.369788779919162,
+      "rmse": 3.158594149727986,
+      "r2": 0.28099912390115345,
+      "n": 997
+    }
+  },
+  "model_notes": {
+    "target": "next calendar-year pre-monsoon groundwater depth (mbgl)",
+    "historical_source": "CGWB pre-monsoon Karnataka extraction from Pre-monsoon_WL_1994-2025.pdf",
+    "annual_frequency": true
+  }
+}

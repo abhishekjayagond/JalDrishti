@@ -1,0 +1,19 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+RAW = ROOT / "data" / "raw"
+PROCESSED = ROOT / "data" / "processed"
+MODELS = ROOT / "models"
+RAW_CSV = RAW / "phase1_karnataka_premonsoon_1994_2025.csv"
+CLEAN_CSV = PROCESSED / "phase1_karnataka_annual_clean.csv"
+CANDIDATE_CSV = PROCESSED / "phase1_station_candidates.csv"
+NODE_CSV = PROCESSED / "annual_nodes.csv"
+GRAPH_NPY = PROCESSED / "annual_adjacency.npy"
+ORDER_JSON = PROCESSED / "annual_station_order.json"
+METRICS_JSON = MODELS / "metrics.json"
+MODEL_META_JSON = MODELS / "model_meta.json"
+RF_MODEL = MODELS / "random_forest.joblib"
+LR_MODEL = MODELS / "linear_regression.joblib"
+LSTM_MODEL = MODELS / "lstm.pt"
+STGNN_MODEL = MODELS / "stgnn.pt"
+CALIBRATION_JSON = MODELS / "conformal.json"

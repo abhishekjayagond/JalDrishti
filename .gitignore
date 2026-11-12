@@ -1,0 +1,77 @@
+# ==============================================================================
+# JalDrishti — Git Ignore Rules
+# ==============================================================================
+
+# ── Python Virtual Environments ──────────────────────────────────────────────
+.venv/
+venv/
+env/
+*/.venv/
+*venv/
+
+# ── Python Bytecode & Cache ──────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ── Testing & Code Coverage ──────────────────────────────────────────────────
+.pytest_cache/
+**/.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+
+# ── Node & Frontend Build ────────────────────────────────────────────────────
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/build/
+build/
+
+# ── Local Runtime Services & State (Native Windows Setup) ─────────────────────
+.local_services/
+logs/
+*.log
+*.pids
+dump.rdb
+*.rdb
+
+# ── Environment & Secrets ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+!.env.example
+
+# ── Scraper Temp & Raw Data ──────────────────────────────────────────────────
+data/raw/
+data/logs/
+data/processed/
+*.csv
+
+# ── Whitelist: Required AI Datasets & Processed Artefacts ────────────────────
+!ai/data/processed/annual_adjacency.npy
+!ai/data/processed/annual_model_features.csv
+!ai/data/processed/annual_nodes.csv
+!ai/data/processed/annual_station_order.json
+!ai/data/processed/phase1_karnataka_annual_clean.csv
+
+# ── Whitelist: Official Indian Map SVG Vector Asset ──────────────────────────
+!india_map_with_state_borders.svg
+!frontend/public/india_map_with_state_borders.svg
+!frontend/src/assets/india_map_with_state_borders.svg
+
+# ── Operating System & IDE ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo

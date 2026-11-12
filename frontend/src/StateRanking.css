@@ -1,0 +1,376 @@
+/* ── State & District Ranking Workspace — Minimal Monochrome System ──────── */
+
+.ranking-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* ── KPI Grid (Max 4 Cards) ── */
+.ranking-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.kpi-metric-card {
+  background: var(--color-neutral);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  padding: 16px 20px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.km-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.km-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-secondary);
+}
+
+.km-icon {
+  color: var(--color-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.km-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1.2;
+}
+
+.km-unit {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-secondary);
+  margin-left: 3px;
+}
+
+.km-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Status Distribution Strip ── */
+.status-distribution-card {
+  background: var(--color-neutral);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  padding: 16px 20px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sd-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.sd-title {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.sd-total {
+  font-size: 12px;
+  color: var(--color-secondary);
+  font-family: var(--font-mono);
+}
+
+.sd-bar-track {
+  display: flex;
+  height: 8px;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.sd-bar-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.sd-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.sd-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sd-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sd-legend-label {
+  color: var(--color-secondary);
+}
+
+.sd-legend-val {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.sd-legend-crit {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ── Layout Grid ── */
+.ranking-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: var(--spacing-sm);
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .ranking-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Ranking Table Panel ── */
+.ranking-table-panel {
+  background: var(--color-neutral);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.rt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.rt-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rt-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.rt-search-wrapper {
+  min-width: 200px;
+}
+
+/* Meter Cell */
+.table-meter-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meter-track {
+  flex: 1;
+  height: 6px;
+  background: var(--color-surface);
+  border-radius: 9999px;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 9999px;
+}
+
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+}
+.sortable-th:hover {
+  color: var(--color-primary);
+}
+
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.clickable-row:hover {
+  background: var(--color-surface) !important;
+}
+.clickable-row.selected-row {
+  background: #f4f4f5 !important;
+}
+
+/* ── Sidebar & Streamlined Tabs ── */
+.ranking-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebar-tab-nav {
+  display: flex;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-full);
+  padding: 3px;
+  box-shadow: none;
+}
+
+.sidebar-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-secondary);
+  padding: 6px 10px;
+  border-radius: var(--rounded-full);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.sidebar-tab-btn:hover {
+  color: var(--color-primary);
+}
+
+.sidebar-tab-btn.active {
+  background: var(--color-primary);
+  color: var(--color-neutral);
+  font-weight: 500;
+}
+
+.sidebar-card {
+  background: var(--color-neutral);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  padding: 16px;
+  box-shadow: none;
+}
+
+.sc-heading {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  color: var(--color-primary);
+}
+
+.sc-sub {
+  font-size: 12px;
+  color: var(--color-secondary);
+  margin-top: 2px;
+  margin-bottom: 12px;
+}
+
+.stress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--rounded-md);
+  background: var(--color-surface);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.stress-row:hover {
+  background: var(--color-neutral);
+  border-color: var(--color-border);
+}
+
+.stress-rank {
+  font-size: 12px;
+  color: var(--color-secondary);
+  width: 14px;
+}
+
+.stress-info {
+  flex: 1;
+}
+
+.stress-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.stress-meta {
+  font-size: 11px;
+  color: var(--color-secondary);
+}
+
+.stress-score {
+  font-size: 13px;
+}
+
+/* CGWB Ref in Sidebar */
+.cgwb-ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cgwb-ref-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+}
+
+.cgwb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cgwb-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.cgwb-threshold {
+  font-size: 11px;
+  color: var(--color-secondary);
+}

@@ -1,0 +1,33 @@
+Copyright (c) 2026 Abhishek Jayagond.
+All Rights Reserved.
+
+JalDrishti is an independently developed software project.
+The original source code, architecture, design, implementation, and project materials are owned by Abhishek Jayagond, subject to any applicable third-party rights.
+
+No permission is granted to reproduce, distribute, modify, or commercially use the original project materials without prior written permission from the copyright owner, except where permitted by applicable law.
+
+================================================================================
+THIRD-PARTY NOTICES & DATA ACKNOWLEDGEMENTS
+================================================================================
+
+This repository includes third-party assets and interacts with external data sources
+subject to their respective licenses and terms:
+
+1. Base Map SVG (india_map_with_state_borders.svg):
+   Copyright (c) 2024 Pareto Software, LLC DBA Simplemaps.com
+   Licensed for commercial use under Simplemaps SVG License terms:
+   https://simplemaps.com/resources/svg-license
+
+2. Authoritative Telemetry & Hydrogeological Norms:
+   - Central Ground Water Board (CGWB), Department of Water Resources, RD & GR,
+     Ministry of Jal Shakti, Government of India (https://cgwb.gov.in)
+   - India-WRIS (Water Resources Information System), National Water Informatics
+     Centre (https://indiawris.gov.in)
+   - India Meteorological Department (IMD), Ministry of Earth Sciences,
+     Government of India (https://imdaws.imd.gov.in)
+
+3. Software Dependencies & Libraries:
+   External open-source libraries used by the backend, AI service, and frontend
+   (including FastAPI, PyTorch, React, Lucide, Recharts, TimescaleDB, Redis, etc.)
+   are the property of their respective copyright holders and are distributed
+   under their individual open-source licenses.

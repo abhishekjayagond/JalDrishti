@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>JalDrishti Groundwater AI</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#f4f7fb;color:#18222d}.wrap{max-width:1150px;margin:0 auto;padding:28px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:#fff;border:1px solid #dfe6ee;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.04)}.big{font-size:28px;font-weight:700;margin-top:8px}select,button{width:100%;padding:10px;border-radius:8px;border:1px solid #ccd6e0;background:#fff}button{cursor:pointer;background:#18222d;color:#fff}.panel{margin-top:18px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;white-space:pre-wrap}.muted{color:#637180}.risk{font-weight:700}.row{display:grid;grid-template-columns:2fr 1fr;gap:14px}@media(max-width:900px){.grid,.row{grid-template-columns:1fr 1fr}}@media(max-width:600px){.grid,.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>JalDrishti Groundwater AI</h1>
+<p class="muted">Karnataka CGWB historical pre-monsoon model · next-year forecast</p>
+<div class="grid" id="cards"></div>
+<div class="panel card">
+  <h3>Station forecast</h3>
+  <div class="row">
+    <div><select id="station"></select></div>
+    <div><button onclick="forecast()">Forecast next year</button></div>
+  </div>
+  <div id="result" class="panel mono"></div>
+</div>
+<div class="panel card"><h3>Model comparison</h3><div id="metrics" class="mono"></div></div>
+</div>
+<script>
+async function load(){
+ const m=await fetch('/api/ai/metrics').then(r=>r.json());
+ const d=m.data||{}; const met=m.metrics||{};
+ document.getElementById('cards').innerHTML=`<div class="card"><div>Graph nodes</div><div class="big">${d.graph_nodes||'-'}</div></div><div class="card"><div>Clean station-years</div><div class="big">${d.clean_station_years||'-'}</div></div><div class="card"><div>Test years</div><div class="big">${(m.split?.test_years||[]).join(', ')||'-'}</div></div><div class="card"><div>Missing calendar years</div><div class="big">${(d.missing_calendar_years||[]).join(', ')||'None'}</div></div>`;
+ document.getElementById('metrics').textContent=JSON.stringify(met,null,2);
+ const stations=await fetch('/api/ai/stations?limit=390').then(r=>r.json());
+ const sel=document.getElementById('station'); sel.innerHTML=stations.map(s=>`<option value="${s.station_id}">${s.district} · ${s.village} · ${s.station_id}</option>`).join('');
+ forecast();
+}
+async function forecast(){const sid=document.getElementById('station').value; if(!sid)return; const r=await fetch('/api/ai/forecast/'+sid); const j=await r.json(); document.getElementById('result').textContent=JSON.stringify(j,null,2);}
+load();
+</script>
+</body>
+</html>

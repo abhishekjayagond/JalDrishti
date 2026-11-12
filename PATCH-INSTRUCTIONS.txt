@@ -1,0 +1,21 @@
+JalDrishti AI Service Deployment Notes
+
+Operational parameters:
+- Serves Linear Regression, the leading model in the reported comparison.
+- Refits the production model using all available annual feature rows at service startup.
+- Sets years_back_lag features to measure from the forecast target year, consistent with training.
+- Builds an approximate model-specific error band using temporal validation residuals.
+- Labels the band and risk thresholds as approximate/exploratory, preserving scientific accuracy.
+- Maintains 2023-2025 evaluation metrics with independent validation caveats.
+
+Launch from PowerShell at repository root:
+1) Start the AI service directly or via the local launcher:
+   .\.venv\Scripts\Activate.ps1
+   cd ai
+   python -m uvicorn service.app:app --host 0.0.0.0 --port 8010
+   # Or start the entire stack: .\start-jaldrishti.ps1
+2) Verify endpoints:
+   Invoke-RestMethod http://localhost:8010/health
+   Invoke-RestMethod http://localhost:8010/api/ai/metrics
+3) Test UI:
+   Open http://localhost:8010/ui or the JalDrishti frontend at http://localhost:3000

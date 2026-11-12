@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#171717"/>
+  <!-- Topographic groundwater contour rings -->
+  <path d="M32 10 C24 22, 16 32, 16 42 A16 16 0 0 0 48 42 C48 32, 40 22, 32 10 Z" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M32 20 C27 28, 22 35, 22 42 A10 10 0 0 0 42 42 C42 35, 37 28, 32 20 Z" fill="none" stroke="#a3a3a3" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="32" cy="42" r="4" fill="#ffffff"/>
+  <!-- Subsurface datum line -->
+  <line x1="14" y1="55" x2="50" y2="55" stroke="#525252" stroke-width="2" stroke-linecap="round"/>
+</svg>
+

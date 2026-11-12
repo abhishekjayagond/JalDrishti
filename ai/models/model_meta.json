@@ -1,0 +1,20 @@
+{
+  "station_count": 390,
+  "node_file": "annual_nodes.csv",
+  "graph_file": "annual_adjacency.npy",
+  "rf_features": [
+    "latitude",
+    "longitude",
+    "gwl_lag_1",
+    "gwl_lag_2",
+    "gwl_lag_3",
+    "gwl_lag_4",
+    "years_back_1",
+    "years_back_2",
+    "years_back_3",
+    "years_back_4",
+    "gwl_mean_4",
+    "gwl_std_4",
+    "gwl_slope_4"
+  ]
+}

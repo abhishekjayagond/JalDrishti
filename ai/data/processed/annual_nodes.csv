@@ -1,0 +1,391 @@
+district,block,village,latitude,longitude,station_id
+Kalaburagi,Kalaburagi,Ferozabad,17.0833,76.7958,0098c762f561
+Mandya,Nagamangala,Nelligere,12.95,76.8,00b68d5e1a8a
+Kalaburagi,Chincholi,Ainapur,17.6083,77.225,01d8913468b0
+Koppal,Koppal,Hosabandiharlapur,15.375,76.3708,032e6aa95ff8
+Dharwad,Dharwad,Mugad,15.4417,74.9,03331cb31759
+Chitradurga,Hosdurga,Gatti Hosahalli,13.9,76.3125,033adbb67896
+Haveri,Shiggaon,Kuppelur,14.9625,75.1417,034c13fb8a40
+Gadag,Shirahatti,Magadi,15.2083,75.5167,035a35ec9114
+Yadgir,Shahapur,Mudbal,16.8,76.7933,04478c8837f0
+Ballari,Kurugodu,Sindegeri,15.3583,76.9125,0479be13a557
+Chikkamagaluru,Koppa,Hariharapura,13.525,75.3,04f504ff6f79
+Mysuru,Tirumakudal-Narsipur,Somanathapura,12.1333,76.9417,05e15f279437
+Dakshina Kannada,Mangaluru,Talapady,12.7625,74.875,06748ef086bb
+Haveri,Shiggaon,Tumminkatti,15.0167,75.2333,068fbe4c0b6c
+Bagalkote,Hungund,Nagur,16.0083,76.0083,077ade6ce8a6
+Uttara Kannada,Sirsi,Yekkambi,14.6833,74.9333,09327708461b
+Hassan,Arkalgud,Arkalgud,12.775,76.0583,09c2dc18bf9c
+Ramanagara,Harohalli,Kylancha,12.6667,77.45,0a383cfd5fea
+Kalaburagi,Kalagi,Sasargaon,17.4958,77.2167,0a7c8402bcf4
+Belagavi,Raybag,Yabaratti,16.4333,74.7917,0affe77e866d
+Chamarajanagara,Gundlupet,Maddur,11.7778,76.55,0b8e23a4c634
+Chikkamagaluru,Ajjampura,Ajjampura,13.7472,76.0083,0c5e3f246809
+Mandya,Maddur,Koppa,12.7167,76.9667,0c93c73f980a
+Tumakuru,Turuvekere,Mayasandra,13.0722,76.7583,0cb4732f913f
+Davangere,Channagiri,Daginakatte,14.2,75.7833,0cd164fb224a
+Raichur,Raichur,Yergera,16.0167,77.2833,0d7642c1b032
+Chikkamagaluru,Tarikere,Lakkavalli,13.6944,75.6556,0e4e7209e712
+Shivamogga,Tirthahalli,Guddekoppa,13.7708,75.2472,0e886572e242
+Gadag,Ron,Belavanaki,15.6667,75.5667,10913fc92f5d
+Kalaburagi,Jevargi,Soan,16.9917,76.6333,11286026d169
+Koppal,Gangavathi,Gangavati,15.45,76.5222,11e001b88b91
+Bidar,Chittaguppa,Nirna,17.7,77.3167,127a6706096f
+Belagavi,Chikodi,Examba,16.5333,74.6042,12b2a23f7f75
+Uttara Kannada,Supa,Kumbarwad,15.1333,74.4,131bd8756da7
+Dakshina Kannada,Mangaluru,Surathkal,12.9944,74.8,13ca3fb983e2
+Kalaburagi,Jevargi,Chigarhalli,16.8861,76.7611,13f0c00f320b
+Belagavi,Athni,Athani (Rural) (Part),16.725,75.0667,163376b3a128
+Kalaburagi,Afzalpur,Mashal,17.2917,76.2417,1674cd996dc7
+Kalaburagi,Kalagi,Mogha,17.4833,77.2333,16f00c2d1a9b
+Bidar,Aurad,Santhpur,18.3042,77.4194,177a7eb1ad69
+Shivamogga,Sagar,Anandapuram,14.0667,75.2167,179eca0b9598
+Ramanagara,Kanakapura,Hegganur,12.3333,77.45,17c5c138fef8
+Davangere,Channagiri,Santhebennur,14.1667,76.0,1823c4452232
+Kodagu,Madikeri,Devarakolli,12.4494,75.6394,1942c6d88f12
+Vijayapura,Vijayapura,Honnutagi,16.8333,75.8333,19591a78a551
+Kalaburagi,Afzalpur,Mallabad,17.2333,76.4167,199da64f512c
+Davangere,Harihara,Malebennur,14.4,75.7667,1a8ba9571b9b
+Vijayapura,Kolhar,Kolhar,16.4673,75.6911,1ac464f8c04c
+Ramanagara,Kanakapura,Ganaldoddi,12.6111,77.3889,1b6ab0d9f1ca
+Belagavi,Athni,Badachi,16.7375,75.1458,1b81ac9d9785
+Tumakuru,Tumakuru,Siddagangamatha,13.325,77.15,1ca1996b07a4
+Chikkamagaluru,Tarikere,Bavikeri Block,13.7167,75.7111,1e9c6146355a
+Yadgir,Shorapur,Devathkall,16.4667,76.6333,1ed5910e9822
+Bidar,Basavakalyan,Mantala,17.8333,76.8667,1f9264ac8deb
+Chitradurga,Chitradurga,Hampanur,14.3514,76.1639,1f97c3ea0381
+Mandya,Mandya,Halebudanur,12.5444,76.9583,208c8671dafa
+Kalaburagi,Aland,Battarga,17.3833,76.5625,217f05aa5fea
+Chikkamagaluru,Koppa,Samse,13.3667,75.3,21da6adf4575
+Raichur,Lingsugur,Chattra,15.8861,76.45,2313168f651e
+Gadag,Gadag,Hulkoti,15.4292,75.55,23557da4d858
+Yadgir,Gurumitkal,Gurmitkal,16.875,77.4,23a41732c12e
+Kodagu,Somvarpet,Kodlipet,12.8,75.8833,2432ead3cde6
+Udupi,Kundapura,Siddapura,13.6667,74.9125,265845708a1b
+Raichur,Sindhanur,Sindhnur,15.7733,76.7611,267259ff0077
+Ramanagara,Channapatna,Gowdagere,12.725,77.1083,26a431ea70a2
+Dakshina Kannada,Sulya,Jalsoor,12.5917,75.3458,26b43540a5c7
+Dakshina Kannada,Bantval,Kudupadaru,12.7167,75.1111,27c7b9de553d
+Belagavi,Chikodi,Sadalaga (Rural),16.5167,74.5167,27e5c13d5093
+Vijayapura,Vijayapura,Shivangi,16.8333,75.9833,28719b1c9d10
+Dakshina Kannada,Bantval,Bantval,12.8833,75.0333,29e6f1208c9e
+Kalaburagi,Afzalpur,Chowdapur,17.2417,76.5417,2a95cd89908e
+Bagalkote,Bilagi,Badagandi,16.35,75.6417,2b18d74c0f55
+Hassan,Belur,Halebeedu,13.2167,75.9833,2b758e851b71
+Bidar,Aurad,Aurad (Rural),18.25,77.45,2b901ed6fa89
+Raichur,Sirawara,Buddinni,16.2,76.7833,2b99c28c28f6
+Uttara Kannada,Siddapur,Mavinagundi,14.2528,74.7833,2bb450fbe735
+Belagavi,Belagavi,Kudichi,15.8667,74.5667,2c4f669fe9fc
+Bagalkote,Mudhol,Malapur,16.3667,75.275,2ddba0c67268
+Shivamogga,Bhadravati,Bhadravati,13.8667,75.7333,2e7915d54071
+Ballari,Siruguppa,Sirigeri,15.4417,76.8417,2ecb032f66ac
+Shivamogga,Tirthahalli,Kodur,13.7833,75.125,308f67c49c6f
+Belagavi,Chikodi,Kabbur,16.3444,74.7278,30ad10d64e76
+Yadgir,Shorapur,Shorapur,16.5259,76.7608,30c593d7b562
+Gadag,Laxmeshwar,Ramageri,15.1394,75.4342,30d834160492
+Shivamogga,Tirthahalli,Shankarahalli,13.8361,75.2167,314c45008bd8
+Bidar,Aurad,Wadgaon Deshmukh,18.1222,77.5181,31ff01c51b39
+Davangere,Channagiri,Kanivebilchi,14.1792,75.8458,3239ae48b74f
+Kodagu,Madikeri,Cheyyandane,12.2278,75.6917,323abf06519d
+Belagavi,Bylahongal,Sutagatti,15.875,74.7083,33be84a9cde3
+Shivamogga,Sagar,Sagar,14.1667,75.0333,34a833b16d88
+Chitradurga,Hiriyur,Maskal,13.985,76.65,3586847cbeef
+Belagavi,Athni,Halyal,16.6333,75.0083,35a89fd3269b
+Raichur,Manvi,Kapgal,16.05,77.1333,35e36a887e1f
+Chikkamagaluru,Chikkamagaluru,Handi,13.2,75.6833,366851dda348
+Gadag,Shirahatti,Shirahatti (Rural),15.2292,75.575,369f72e54eb1
+Shivamogga,Hosanagara,Hosanagara,13.9,75.1,3825afc44a84
+Dharwad,Annigeri,Basapur,15.4882,75.3808,38ccce35e076
+Mysuru,Piriyapatna,Muguru,12.3361,76.1611,393b6994212e
+Dharwad,Kalghatgi,Devikoppa,15.1333,74.9333,3a0aefe09698
+Kodagu,Kushalanagar,Cheerambane,12.4375,75.9181,3a1cc2b82547
+Ballari,Ballari,Gudekote,15.1167,77.1375,3c2ef62bdc77
+Mysuru,Piriyapatna,Bylakuppe,12.4917,76.2111,3c301feae23f
+Ramanagara,Kanakapura,Kanakapura,12.5667,77.4333,3cb893ba4886
+Yadgir,Shahapur,Madarki,16.7833,76.7667,3d35aec97fc2
+Yadgir,Shorapur,Kakkeri,16.3667,76.5833,3f7934ced928
+Tumakuru,Pavagada,Palavalli,14.1583,77.2917,404ce8d4dda3
+Vijayapura,Chadachan,Halsangi,17.3208,75.8347,4448bef68f41
+Mysuru,Krishnarajanagara,Saligrama,12.5042,76.2917,454368ce0009
+Davangere,Harihara,Bhanuvalli,14.4292,75.775,465190ab9d35
+Raichur,Maski,Mahampur,15.8389,76.4583,46ae6a7ee939
+Raichur,Raichur,Raichur,16.2083,77.35,4814b4161f08
+Vijayapura,Indi,Nimbal,17.1,75.9,484034dc7308
+Chitradurga,Holalkere,Talya,14.025,76.275,48739df7e33a
+Ballari,Sandur,Yeswanthanagar,15.0333,76.4833,48a6cbabaceb
+Mandya,Maddur,Kawdley,12.7667,76.9333,48ad8b5001f9
+Bengaluru Rural,Devanhalli,Vishwanathapura,13.275,77.65,49263b464f54
+Bagalkote,Guledagudda,Guledagudda,16.05,75.7875,495ee2dd8f00
+Dakshina Kannada,Beltangadi,Alandangadi,13.0417,75.2167,4a8a1cb19fb1
+Ballari,Sandur,Sanduru,15.0875,76.55,4c5e8f4549ae
+Dakshina Kannada,Kadaba,Kadaba,12.7417,75.4667,4ce94d4ae020
+Koppal,Koppal,Hoshalli,15.3125,76.3167,4d5db46b7129
+Vijayapura,Devara Hipparagi,Satihal,16.7,76.0667,4d69a611c7e6
+Udupi,Hebri,Goliangadi,13.5403,74.9917,4d9adcd398c9
+Belagavi,Gokak,Arabhavi-Dhavalatti,16.2167,74.8833,4e0bfd927fbc
+Belagavi,Yaragatti,Soppadla,15.9917,75.05,4e18f22c5aa1
+Belagavi,Hukeri,Sutagatti,16.0667,74.5208,4e8a5f4a9180
+Uttara Kannada,Sirsi,Banavasi,14.5342,75.0189,4f039718e37d
+Chikkamagaluru,Kalasa,Kalasa,13.2333,75.3542,4f6f1c54edf5
+Bagalkote,Bilagi,Teggi,16.375,75.5292,501bc478f323
+Kalaburagi,Kalaburagi,Jogur,17.1083,76.6167,5041573713f4
+Bengaluru Urban,Bangalore City,Jayanagara,12.9225,77.5792,50d5817f11a5
+Hassan,Sakaleshpur,Ballupet,12.9458,75.8833,50f00db478cb
+Belagavi,Savadathi,Halaki,15.9139,74.9167,51075fae707c
+Ballari,Ballari,Allipuram,15.1636,76.8592,516c8de3ac71
+Belagavi,Hukeri,Hulloli,16.2583,74.6583,52ed7d2678ff
+Uttara Kannada,Sirsi,Bandal,14.5333,74.6667,53e475a74677
+Kodagu,Madikeri,Bhagamandala,12.3833,75.5333,53e6cf7cfc37
+Chikkamagaluru,Chikkamagaluru,Vasthare,13.25,75.7083,55285b979790
+Koppal,Karatagi,Karatgi,15.6083,76.6583,557aca322660
+Mandya,Nagamangala,Bindiganavale,12.8781,76.6361,55f4ad830853
+Uttara Kannada,Supa,Joida,15.1667,74.475,57b57c4062c3
+Mysuru,Heggadadevankote,Saragur,12.1208,76.4667,580642c9fa38
+Tumakuru,Madhugiri,Bidarakere,13.8728,77.2272,582447e86fb8
+Kalaburagi,Aland,Madan Hipperga,17.4667,76.3833,59f68a6f5925
+Belagavi,Gokak,Mamadapur,16.0833,74.95,5b5d6b531f7a
+Uttara Kannada,Yellapur,Yellapur,14.9667,74.7333,5b95fffb34f8
+Belagavi,Hukeri,Gotur,16.2333,74.5333,5bdf6d51faf2
+Vijayapura,Devara Hipparagi,Deur Tanda,16.7792,76.0958,5d1aafb105a2
+Chikkamagaluru,Sringeri,Sringeri (Rural),13.4,75.25,5e57931de1fb
+Kodagu,Somvarpet,Somvarpet1,12.6,75.8333,602ecbe8d27d
+Bagalkote,Badami,Pattadakall,15.95,75.8,6152188f3171
+Uttara Kannada,Siddapur,Bilgi,14.3625,74.7972,618a9454076d
+Kodagu,Virajpet,Ammathi,12.2417,75.8667,61d3bf1d3830
+Bidar,Kamalanagara,Dongargaon,18.2583,77.2583,6252743ea215
+Chamarajanagara,Yelandur,Maddur,12.0778,77.0667,62ba299241f8
+Shivamogga,Shivamogga,Pillangere,13.9583,75.6417,62c053409ce9
+Shivamogga,Shivamogga,Ayanur,14.0083,75.5583,6307f973809f
+Vijayapura,Muddebihal,Hiremural,16.2833,76.1,634bd3e74de7
+Kalaburagi,Aland,Hosahalli,17.5833,76.5833,63db581e7255
+Vijayapura,Muddebihal,Tangadgi,16.2153,76.0958,6492ec634ca0
+Mysuru,Mysuru,Mysore,12.3583,76.5375,64cb2b4afe78
+Yadgir,Shahapur,Khanapur,16.725,77.0167,66769b45eeea
+Mandya,Shrirangapattana,Kodiyala,12.4583,76.8417,667c49b45e27
+Uttara Kannada,Karwar,Amdalli,14.7833,74.25,67905e73d751
+Bengaluru Rural,Dodballapur,Siddenaykanahalli,13.2917,77.5417,67994d2f2512
+Dakshina Kannada,Kadaba,Balpa,12.675,75.5333,67ab25c5bfc7
+Kodagu,Virajpet,Virajpet1,12.2,75.8,67f9fe419d43
+Belagavi,Raybag,Yadrav,16.5167,74.7667,6820e4a8a634
+Tumakuru,Madhugiri,Madhugiri,13.6667,77.2,68243c89499d
+Dakshina Kannada,Kadaba,Subramanya,12.6667,75.6194,68467bb3e641
+Hassan,Holenarsipur,Kuppe,12.6583,76.1875,6861420d47b2
+Bidar,Bidar,Bidar,17.9133,77.5236,68af9c1018ee
+Belagavi,Belagavi,Belagavi,15.8667,74.5,68b65d5974df
+Kodagu,Madikeri,Heravanadu,12.3792,75.7083,6a1ef80294ef
+Belagavi,Hukeri,Hukkeri (Rural),16.225,74.6056,6acfcc0e1fe1
+Belagavi,Gokak,Parthanhalli,16.15,75.0667,6b7c482a384f
+Tumakuru,Pavagada,Pavagada,14.1,77.2833,6b87141457ca
+Yadgir,Shahapur,Doranahalli,16.7417,76.85,6baf013699c4
+Belagavi,Hukeri,Goudawad,16.225,74.6833,6caf4422e34b
+Tumakuru,Tiptur,Nonavinakere,13.1583,76.5583,6d52cba4f00e
+Uttara Kannada,Honavar,Haldipur,14.3542,74.425,6ea84c42ac22
+Chikkamagaluru,Koppa,Begaru,13.5042,75.2083,6eedf8307cf1
+Kalaburagi,Aland,Karhari,17.6083,76.7833,6f8627a0678e
+Koppal,Kushtagi,Tawargera,15.7667,76.4167,7053f3bb6b09
+Mandya,Maddur,Maddur,12.5861,77.0431,706f33f4c38d
+Belagavi,Savadathi,Bailhongal,15.8375,74.9181,71550dfe058d
+Uttara Kannada,Karwar,Majali,14.9,74.15,71710f3e38c2
+Udupi,Bainduru,Baindur,13.8047,74.6758,727b1a065387
+Kalaburagi,Jevargi,Ravnoor,16.9917,76.725,734b6afa9ac2
+Mandya,Pandavapura,Haravoo,12.4625,76.6278,75f39bf24528
+Uttara Kannada,Siddapur,Siddapur,14.35,74.9,76b81b7163f4
+Bengaluru Urban,Anekal,Begihalli,12.7958,77.6069,7762b1c39c76
+Mysuru,Piriyapatna,Kamalapura,12.3333,76.1083,77767f62c515
+Udupi,Kundapura,Kundapura,13.6286,74.6931,77a67b060d34
+Koppal,Gangavathi,Kesarhatti,15.5083,76.4958,78f2a7ebe270
+Vijayapura,Muddebihal,Devarhulagabal,16.4083,76.2444,790c6402eca6
+Mandya,Shrirangapattana,Mandya Koppalu,12.3917,76.8,7936d4690762
+Bidar,Basavakalyan,Rajeshwar,17.8083,77.05,7b4fd18f1e46
+Hassan,Arkalgud,Vaddarahalli,12.8056,76.0611,7b6ad5344353
+Mandya,Shrirangapattana,Arakere,12.4167,76.8,7b6e730e5af0
+Chitradurga,Hiriyur,Harthikote,14.05,76.55,7bc80719561c
+Uttara Kannada,Siddapur,Sampagod,14.4389,74.8764,7c1436c0d009
+Mandya,Mandya,Bilidegilu,12.625,76.8667,7c167eedf596
+Uttara Kannada,Honavar,Chandavar,14.4,74.4792,7c1f0dc21323
+Hassan,Hassan,Shanthigrama,12.9889,76.225,7db19cc24d6a
+Shivamogga,Sorab,Chandraguthi,14.4333,74.9583,7e213291058a
+Koppal,Karatagi,Siddapur,15.5292,76.6333,7e8cd0d355ea
+Uttara Kannada,Siddapur,Kansur,14.5167,74.8417,7eb1f2745a78
+Kalaburagi,Kamalapur,Salgera (V.K.),17.6333,76.7833,7f9d51ace256
+Vijayapura,Vijayapura,Aliyabad,16.8917,75.7917,7ffa55d1b980
+Chitradurga,Hosdurga,Hosadurga,13.7833,76.2833,7ffde6535836
+Belagavi,Belagavi,Halaga,15.7689,74.5583,80927c356094
+Vijayapura,Sindagi,Yankanchi,16.8625,76.3486,80a12f567837
+Dharwad,Dharwad,Amminabhavi,15.5417,75.0542,81b91f863236
+Raichur,Sindhanur,Turvihal,15.7667,76.6,81ed4f6c7320
+Uttara Kannada,Karwar,Sadashivgad,14.8542,74.1297,81f19800fb00
+Uttara Kannada,Bhatkal,Murudeswar,14.0917,74.4917,83162af20388
+Kodagu,Kushalanagar,Suntikoppa,12.4486,75.8236,8461072b01ea
+Belagavi,Athni,Nandagaon,16.6806,75.125,84b81f16f1c8
+Hassan,Arsikere,Arasikere (Rural),13.2833,76.2833,84eb8b05ae42
+Dakshina Kannada,Sulya,Sulya,12.5667,75.4,85ccb14a8da6
+Raichur,Manvi,Hirekotankal,15.9625,76.9528,86c3b7ad231d
+Mysuru,Piriyapatna,Kittur,12.4778,76.1,8742fffeb54d
+Mysuru,Heggadadevankote,Hanagodu,12.1417,76.2917,88e7802207bb
+Chamarajanagara,Gundlupet,Devalapura,11.8417,76.8167,8930ea1d6724
+Raichur,Devadurga,Gabbur,16.3,77.1583,89db1bfa453f
+Tumakuru,Tiptur,Halkurke,13.3708,76.4792,89f337c47baf
+Tumakuru,Koratagere,Tumbadi,13.5667,77.2417,8af8fd66a446
+Dakshina Kannada,Bantval,Mittur,12.8,75.1417,8b0447524e05
+Chitradurga,Holalkere,Dummi,14.05,76.0833,8bc1cc09872c
+Bengaluru Urban,Bangalore City,Hebbal,13.0417,77.5833,8ca94bfbddea
+Chikkamagaluru,Koppa,Jayapura,13.3958,75.375,8cc9c4338548
+Belagavi,Athni,Khotanatti,16.7583,75.2333,8dc25bc2ba17
+Chamarajanagara,Yelandur,Agara,12.1167,77.075,90d94f6ea938
+Shivamogga,Hosanagara,Humacha,13.8583,75.2083,913ad2fa1878
+Udupi,Kundapura,Shankarnarayana,13.6042,74.8625,91ec55e32047
+Shivamogga,Shivamogga,Gajanur,13.85,75.55,92272461b4ef
+Uttara Kannada,Kumta,Badal,14.425,74.6056,928171e1f5be
+Tumakuru,Chiknayakanhalli,Mattighatta,13.4667,76.4833,9339ccccd880
+Tumakuru,Madhugiri,Midigeshi,13.8292,77.2042,93d0c865f308
+Shivamogga,Sorab,Sorab,14.3667,75.1,942ccfc29ecf
+Bagalkote,Jamkhandi,Alagur,16.5722,75.3486,9435948a52d1
+Vijayapura,Basavana Bagewadi,Ingaleshwar,16.65,76.0167,94b634acd491
+Raichur,Devadurga,Kakargal,16.35,77.0667,94c73c11898c
+Udupi,Kapu,Kota,13.2375,74.7469,962755d85cfb
+Hassan,Channarayapatna,Shravanabelgola (Ct),12.8556,76.4875,9644c3fc0262
+Shivamogga,Bhadravati,Melinahanasavadi,13.9833,75.6889,969d656bf9a1
+Uttara Kannada,Ankola,Ankola,14.6667,74.3,96d7da083598
+Tumakuru,Turuvekere,Turuvekere,13.1611,76.6667,9801be4b4066
+Bidar,Kamalanagara,Kamalnagar (Ct),18.25,77.2,9be004f60c22
+Kalaburagi,Chitapur,Ravoor,17.075,77.0083,9d24f09c472b
+Mysuru,Nanjangud,Hullahalli,12.095,76.6689,9dab886cf723
+Ballari,Sandur,Shro.Gangalapur,15.175,76.6167,9e09a64fef59
+Belagavi,Khanapur,Khanapur (Rural),15.6667,74.5,9e98f7004bc2
+Hassan,Hassan,Kattaya,12.8917,76.0792,9f124b7497e0
+Belagavi,Ramdurg,Ramdurg,15.8833,75.35,9f76552563d4
+Kodagu,Ponnampet,Basavanane,12.2486,76.0597,9fc3b523c8c7
+Vijayanagar,Hosapete,Mariyammanahalli,15.1667,76.3667,a14343c20e5f
+Udupi,Hebri,Ardi,13.5181,74.9744,a1854222e445
+Vijayapura,Almel,Vibhutihalli,17.1,76.1833,a2822c308e5a
+Bidar,Bidar,Andura,17.9069,77.4194,a3240d5354a1
+Chamarajanagara,Kollegala,Madhuvanahalli,12.1522,77.15,a51ddeb94764
+Kalaburagi,Afzalpur,Afzalpur (Rural),17.2,76.3583,a5dd827c80cb
+Davangere,Channagiri,Thyavanige,14.2458,75.8833,a66a031c645a
+Yadgir,Shorapur,Shantpur,16.4083,76.7167,a70e3b97e5e6
+Kalaburagi,Kamalapur,Marguthi,17.6167,77.0667,a75697085e09
+Shivamogga,Shivamogga,Tevarachatnahalli,13.95,75.6167,a7c8f5e4f865
+Raichur,Manvi,Neermanvi,16.0417,77.1,a80b9253b215
+Vijayapura,Nidagundi,Nidagundi,16.375,75.9,a9480077ea92
+Kodagu,Somvarpet,Shanivarasante,12.725,75.8958,aa032153cfce
+Kalaburagi,Kalaburagi,Pattan,17.425,76.725,aa283587d494
+Kalaburagi,Chincholi,Kallur [K],17.3833,77.4667,aa7210d9e354
+Davangere,Davanagere,Avaragere,14.4097,75.9625,ab2fe89ff52a
+Vijayapura,Almel,Devanagao,17.1333,76.3,abfdbfe9b4e0
+Belagavi,Hukeri,Raxi,16.2333,74.65,ac38ba329259
+Dakshina Kannada,Sulya,Bellare,12.6667,75.3944,adf98c1b32e0
+Bidar,Bhalki,Bhalki (R),18.1,77.2833,ae9cc48aa6df
+Vijayapura,Devara Hipparagi,Pettepur,16.6333,76.2583,aea8ebdc3cc6
+Kalaburagi,Yadrami,Alur,16.8861,76.6222,aebc58a7bf7b
+Hassan,Channarayapatna,Bagur,13.025,76.375,aed14a24434f
+Vijayapura,Indi,Satalagaon,17.15,76.0833,af1071a1d256
+Belagavi,Athni,Mole,16.75,74.9917,af8d6c4bba12
+Kalaburagi,Afzalpur,Karajagi,17.2667,76.2167,af9354c24ae3
+Bidar,Bhalki,Helsi,18.0667,77.1667,b008d2ac43a0
+Bengaluru Urban,Bangalore City,Byrasandra,12.9181,77.5847,b0241c846f3e
+Gadag,Mundaragi,Mundargi ( R ),15.2083,75.8833,b0c1a4c4d903
+Belagavi,Khanapur,Gunji,15.5361,74.4903,b1688f2a3c82
+Dakshina Kannada,Sulya,Aranthodu,12.5208,75.475,b2e15194a88e
+Chitradurga,Chitradurga,Chitradurga (Rural),14.2167,76.4,b433fd204972
+Dakshina Kannada,Beltangadi,Beltangadi,13.0,75.2833,b45a1df2c451
+Kalaburagi,Kamalapur,Ladmugli,17.6208,76.875,b48aca2304e0
+Yadgir,Shorapur,Kembhavi,16.6458,76.5333,b4fdc998727d
+Udupi,Bainduru,Kirimanjeshwar,13.7833,74.7167,b5365f903178
+Kalaburagi,Chincholi,Chincholi [R],17.4167,77.4208,b574b353eeec
+Bidar,Humnabad,Ghatboral,17.8861,77.0944,b6e7869011d4
+Bengaluru Rural,Nelamangala,Shivagange,13.1889,77.2278,b7807cf780a6
+Bagalkote,Hungund,Aminagad (Ct),16.0542,75.9417,b8fc4ff98e13
+Belagavi,Hukeri,Bastwad,16.3,74.7208,b95f92c2f9cd
+Vijayapura,Chadachan,Newdhulikhed,17.3889,75.8444,bb54b5263d22
+Gadag,Ron,Hunagundi,15.8,75.75,bba974c5d0e7
+Mandya,Shrirangapattana,Mahadevapura,12.4,76.7667,bbf6ba11e714
+Bagalkote,Ilkal,Nandavadgi,16.025,76.3,bc07b3a7a1be
+Tumakuru,Koratagere,Nagenahalli,13.475,77.2417,bd06b9b698ed
+Belagavi,Athni,Malabad,16.9028,75.1194,c056868aa5a2
+Ramanagara,Magadi,Banavadi,13.1167,77.2583,c0e444db1388
+Bengaluru Urban,Bangalore City,Bangalore,12.9442,77.5583,c0fae20fde92
+Kodagu,Madikeri,Napoklu,12.3042,75.6917,c18d4f2cfb20
+Yadgir,Wadagera,Naikal,16.7333,77.05,c25b7ce97ff6
+Koppal,Kushtagi,Kyadiguppa,15.9,76.1833,c36cc97668db
+Dakshina Kannada,Bantval,Punjalkatte,12.95,75.1625,c4780a960a4c
+Ramanagara,Magadi,Magadi,12.9722,77.1903,c65cf7d832c3
+Vijayapura,Muddebihal,Nebageri,16.2833,76.1125,c779f8f45a4f
+Belagavi,Raybag,Ainapur,16.6417,74.8833,cc7380cd344d
+Belagavi,Nippani,Nippani (Rural),16.4042,74.3792,cd2688b7bd37
+Gadag,Shirahatti,Chabbi,15.1625,75.5917,cd83cd88aea0
+Udupi,Udupi,Malpe,13.35,74.7,ce0509a635c6
+Chitradurga,Hiriyur,Vaddikere,14.1167,76.6,d048bdf2b1bb
+Mandya,Shrirangapattana,Naguvanahalli,12.3889,76.6833,d059959f723d
+Hassan,Belur,Belur,13.1667,75.8833,d1c5e8e86e7b
+Shivamogga,Shikarpur,Ambligolla,14.1833,75.2833,d2da61a86eed
+Belagavi,Hukeri,Sankeshwar (R),16.2583,74.4833,d3b98daf9cc8
+Chikkamagaluru,Ajjampura,Antharagatte,13.725,76.1167,d3c2a7e8d131
+Vijayanagar,Harappanahalli,Chikkahalli,14.85,75.9667,d3f60d86116f
+Udupi,Kundapura,Vandse,13.7083,74.7625,d5383baf6bcf
+Mandya,Nagamangala,Nagamangala,12.825,76.7583,d5396b6c3cf2
+Vijayapura,Muddebihal,Muddebihal,16.3333,76.1222,d53bd0c88af0
+Kalaburagi,Kalaburagi,Uplaon,17.425,76.85,d5b1d138fbb8
+Uttara Kannada,Bhatkal,Bhatkal,13.9833,74.55,d65159d7d3f3
+Chikkaballapura,Gauribidanur,Thondebhavi,13.5833,77.5833,d671ebeb98f6
+Chikkamagaluru,Chikkamagaluru,Magadi,13.2639,75.8472,d67a81ccd88b
+Dharwad,Hubballi,Hebsur,15.4333,75.3,d68a8fd41599
+Uttara Kannada,Kumta,Mirjan,14.4931,74.425,d73753251947
+Tumakuru,Gubbi,Gubbi,13.3042,76.9417,d807c4f6e645
+Belagavi,Athni,Radderahatti,16.6417,75.075,d80b7b8f8334
+Chamarajanagara,Gundlupet,Begur,11.9375,76.6708,d936796527fd
+Hassan,Alur,Alur,12.9667,75.9833,da72fdfe657e
+Kalaburagi,Aland,Nimberga,17.3833,76.5792,da83dae8a4f4
+Chitradurga,Holalkere,Arehalli,14.0333,76.1167,dc1fd8fb7ca2
+Belagavi,Nippani,Galatga,16.4875,74.4708,dc84dd121e3f
+Davangere,Harihara,Vasana,14.4083,75.6625,dd0fc9b56d53
+Uttara Kannada,Ankola,Belekeri,14.725,74.2667,dd6a643c9fc7
+Dakshina Kannada,Mangaluru,Haleangady,13.0417,74.7958,dde283d44e5e
+Chikkamagaluru,Narasimharajapura,Narasimharajapura,13.6,75.5,df014a6ccea5
+Udupi,Kapu,Koup Uliyargoli,13.2472,74.7472,df51dd5e70ac
+Vijayanagar,Hosapete,Kamalapuram,15.3,76.475,e06e8711ee46
+Chitradurga,Holalkere,R.Nulenur,14.025,76.125,e08a6faa5d50
+Dakshina Kannada,Beltangadi,Venooru,13.0111,75.1444,e0aefde25b1e
+Belagavi,Gokak,Khanagaon,16.0222,74.8278,e1eacff7f87a
+Belagavi,Savadathi,Saundatti,15.7556,75.2514,e21116af9077
+Kodagu,Ponnampet,Gonikoppal (Ct),12.2167,75.9417,e22cc8a2c56d
+Bagalkote,Rabakavi Banahatti,Banhatti (Rural),16.4792,75.1319,e2a20ab092f4
+Ballari,Siruguppa,Tekkalakote,15.5125,76.875,e2de67b8b082
+Uttara Kannada,Sirsi,Sirsi,14.625,74.8736,e34840d0a994
+Hassan,Arkalgud,Basavapatna,12.6125,76.1208,e39a6654aa57
+Mandya,Krishnarajpet,Tendekere,12.5667,76.5333,e4021d51a6a0
+Ballari,Kampli,Emmiganur,15.4,76.7,e469152b4821
+Dakshina Kannada,Kadaba,Nelliadka,12.8083,75.3833,e4fb9a3f1e58
+Bagalkote,Ilkal,Tumba,16.0167,76.1917,e5577bf61ed6
+Chamarajanagara,Kollegala,Kunthur,12.125,77.0356,e67ce61ff215
+Uttara Kannada,Kumta,Kumta,14.4,74.4,e6afc228aedd
+Udupi,Udupi,Udupi,13.3333,74.75,e75c9d4b6a9a
+Uttara Kannada,Siddapur,Dodmane,14.3625,74.7042,e7c1f023a1d3
+Udupi,Bainduru,Kollur,13.8667,74.8,e8466f8b81dd
+Uttara Kannada,Bhatkal,Manki,14.1,74.4917,e89bfeb8f307
+Kodagu,Ponnampet,Hudikeri,12.0833,75.9458,e905502635ca
+Uttara Kannada,Mundgod,Malgi,14.7708,75.0167,e910cfabbafc
+Bidar,Bhalki,Saigaon,18.0853,77.0933,e971743b5df3
+Kalaburagi,Yadrami,Ukinal,16.7583,76.6333,ea73a6598122
+Kalaburagi,Chincholi,Kollur,17.5361,77.4347,eafb70aea67b
+Mandya,Mandya,Basaralu,12.7167,76.7833,ec5115fdcb9b
+Shivamogga,Sagar,Talaguppa,14.2167,74.9167,ecd9964000fc
+Shivamogga,Bhadravati,Holehonnur,13.9833,75.6889,ed9ac0d4d5ca
+Uttara Kannada,Supa,Anshi,14.9875,74.3833,edb6ac038647
+Chikkaballapura,Gauribidanur,Pura,13.5389,77.6056,ee3a3d37b9b5
+Belagavi,Chikodi,Roopanal,16.475,74.6333,eee36cd69394
+Raichur,Sirawara,Bagalwad,16.05,76.8917,f0e26cde62c3
+Uttara Kannada,Kumta,Gokarn,14.55,74.3167,f2fdb526c4d9
+Kodagu,Madikeri,Kakkabe,12.2547,75.6431,f32994524a9a
+Dakshina Kannada,Mangaluru,Adyar (Ct),12.9806,74.8333,f4177e53b11c
+Chikkamagaluru,Kadur,Sakrepatna,13.4306,75.9167,f5f75ee2207b
+Chitradurga,Chitradurga,Siddavvanadurga,14.3583,76.3167,f8dd819d732b
+Dharwad,Navalgund,Morab,15.5917,75.15,f91361649757
+Hassan,Holenarsipur,Mudalahippe,12.8139,76.2139,f9b7ac6df441
+Mysuru,Piriyapatna,Ranganathapura,12.425,76.0,fa7178011ee3
+Vijayanagar,Hadagalli,Magala,14.9833,75.8,fb70accea5e5
+Belagavi,Khanapur,Londa (Ct),15.45,74.5,fca64bd6d743
+Bengaluru Rural,Nelamangala,Mahadevapura,13.0667,77.3167,fcd2f4cae1e8
+Uttara Kannada,Karwar,Karwar,14.8,74.1333,fd090a8b456a
+Belagavi,Athni,Kakamari,16.8694,75.275,fd3537ec44e3
+Ramanagara,Kanakapura,Nayakanahalli,12.45,77.3333,ff557a647b1c

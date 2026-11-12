@@ -1,0 +1,7 @@
+{
+  "method": "split_conformal_style",
+  "calibration": "absolute_persistence_residual",
+  "quantile": 0.9,
+  "radius_mbgl": 6.02,
+  "n": 717
+}
