@@ -1,112 +1,103 @@
-# JalDrishti — Groundwater Intelligence & Forecasting Platform
+# JalDrishti
 
-**National DWLR Telemetry Analytics, Statutory GEC-2015 Evaluation & Spatial-Temporal Aquifer Forecasting**  
-*Addressing Central Ground Water Board (CGWB) Problem Statement #25068*  
+**Groundwater Telemetry Analytics, GEC-2015 Assessment, and Seasonal Aquifer Forecasting**  
+*Central Ground Water Board (CGWB) Problem Statement #25068*
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11-blue.svg)](https://www.python.org/)
-[![React 18](https://img.shields.io/badge/react-18.x-61dafb.svg)](https://react.dev/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/)
-[![TimescaleDB](https://img.shields.io/badge/TimescaleDB-PostgreSQL%2015-gold.svg)](https://www.timescale.com/)
-[![Redis](https://img.shields.io/badge/redis-5%2B-red.svg)](https://redis.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-
-**Author & Project Lead:** Abhishek Jayagond  
-**Repository:** [https://github.com/abhishekjayagond/JalDrishti](https://github.com/abhishekjayagond/JalDrishti)  
-**Academic Reference:** [Comprehensive Defense Guide (PROJECT_DEFENSE_GUIDE.md)](./PROJECT_DEFENSE_GUIDE.md) | [Viva Question Bank (VIVA_QUESTIONS_AND_ANSWERS.md)](./VIVA_QUESTIONS_AND_ANSWERS.md)  
+**Author:** Abhishek Jayagond  
+**Repository:** https://github.com/abhishekjayagond/JalDrishti  
+**Documentation:** [Technical Defense Guide (PROJECT_DEFENSE_GUIDE.md)](./PROJECT_DEFENSE_GUIDE.md) | [Viva Defense Question Bank (VIVA_QUESTIONS_AND_ANSWERS.md)](./VIVA_QUESTIONS_AND_ANSWERS.md)
 
 ---
 
-## Executive Summary
+## Overview
 
-Groundwater provides **63% of India's total net irrigated agriculture area** and **85% of rural domestic drinking water supplies**. Under the National Hydrology Project (NHP), the Central Ground Water Board (CGWB) has deployed over **5,260 automated Digital Water Level Recorders (DWLR)** across India. Transforming sensor observations and sparse historical records into actionable intelligence requires unified data engineering and robust hydrogeological analytics.
+JalDrishti is a groundwater monitoring and forecasting platform built for Central Ground Water Board (CGWB) Problem Statement #25068. The system processes groundwater level observations from automated Digital Water Level Recorders (DWLR), evaluates aquifer extraction using statutory GEC-2015 guidelines, and forecasts future pre-monsoon water table depths using machine learning.
 
-**JalDrishti** provides an operational decision-support platform that combines historical telemetry analysis, dynamic recharge modeling, statutory Ground Water Estimation Committee (GEC-2015) volumetric evaluations, and seasonal water table forecasting equipped with distribution-free conformal uncertainty intervals.
+In India, groundwater accounts for roughly 63% of net irrigated agriculture and 85% of rural drinking water supplies. In many agricultural regions, pumping heavily outpaces seasonal monsoon recharge, causing steady water table depletion. Under the National Hydrology Project, the CGWB has deployed over 5,260 automated DWLR stations across the country. While this network provides regular water-level observations, turning raw sensor readings into practical guidance requires reliable data pipelines, statutory accounting, and interpretable forecasting models.
 
-In its verified baseline, JalDrishti operates on **390 verified real Karnataka CGWB observation wells** (with 32 years of annual pre-monsoon records spanning 1994–2025; 28,544 validated station-years) and **78 nationwide benchmark fallback stations** (covering 26 states for UI continuity), while providing ingestion scripts structured for continuous DWLR telemetry streams.
-
----
-
-## Documentation & Viva Resources
-
-For comprehensive technical evaluation, project viva defense, and architectural deep-dives, consult the authoritative documentation manuals:
-
-- 📘 **[PROJECT_DEFENSE_GUIDE.md](./PROJECT_DEFENSE_GUIDE.md)**: Master technical manual across 15 mandatory sections covering national groundwater context, problem motivation, system architecture, database design, ML formulation, conformal calibration, and native Windows operational rationale.
-- 🎯 **[VIVA_QUESTIONS_AND_ANSWERS.md](./VIVA_QUESTIONS_AND_ANSWERS.md)**: 105 in-depth, defensible questions and answers across 24 hydrogeological, algorithmic, and software engineering categories, including the critical *"Questions I Must Never Answer Incorrectly"* viva traps.
-- 🛠️ **[LOCAL_SETUP.md](./LOCAL_SETUP.md)**: Native Windows local services installation and environment setup guide.
+JalDrishti was built to address these challenges. It currently runs on a verified baseline of 390 long-term Karnataka CGWB observation wells (covering 32 years of pre-monsoon records from 1994 to 2025; 28,544 validated station-years) along with 78 nationwide benchmark stations across 26 states for interface continuity.
 
 ---
 
-## Core Capabilities & Implementation Scope
+## Detailed Technical Documentation
 
-### 1. Water Table Fluctuation (WTF) Analytics (Task 1)
-- Analyzes water depth readings across monitoring stations.
-- Computes rate of rise/fall metrics with 7-day moving averages.
-- Identifies sudden drawdown drops indicative of rapid extraction ($v_d > 0.15\text{ m/day}$).
-- Geospatial vector cartography projecting station status across India.
+For project evaluation, academic defense, and viva preparation, detailed technical references are available in the repository:
+
+- [PROJECT_DEFENSE_GUIDE.md](./PROJECT_DEFENSE_GUIDE.md): A comprehensive 15-section reference covering national groundwater context, problem motivation, system architecture, database design, machine learning model selection, conformal calibration, and native Windows operational choices.
+- [VIVA_QUESTIONS_AND_ANSWERS.md](./VIVA_QUESTIONS_AND_ANSWERS.md): 105 detailed questions and answers across 24 technical categories, including common viva traps and specific questions on GEC-2015 classifications, temporal data splits, and model choices.
+- [LOCAL_SETUP.md](./LOCAL_SETUP.md): Step-by-step instructions for running the stack locally on native Windows.
+
+---
+
+## What the System Does
+
+JalDrishti organizes groundwater analytics into four core tasks:
+
+### 1. Water Table Fluctuation Analytics (Task 1)
+- Tracks groundwater depth observations over time and computes 7-day rolling averages to filter out daily pumping noise.
+- Calculates drawdown velocity to detect rapid local water table decline ($v_d > 0.15\text{ m/day}$).
+- Maps monitoring stations across India using an accurate vector-based base map with official state boundaries.
 
 ### 2. Dynamic Monsoon Recharge Estimation (Task 2)
-- Analyzes water table seasonal recovery from precipitation records.
-- Computes seasonal water level rise ($\Delta h_{monsoon} = h_{pre} - h_{post}$ in metres) and recovery rates (m/day) across hydrogeological formations (Alluvial, Hard Rock, Basalt, Granite, Sandstone) using specific yield ($S_y$) norms.
-- Identifies stations with zero or negative seasonal recovery.
-- *Scope Note:* Task 2 computes point-level well water table responses; block-level volumetric recharge budgets ($R = S_y \cdot \Delta h \cdot A + Q_{net}$) are evaluated at the administrative assessment unit level (Task 3).
+- Evaluates how aquifers recover following rainfall events by comparing pre-monsoon and post-monsoon water levels.
+- Computes seasonal water level recovery ($\Delta h_{monsoon} = h_{pre} - h_{post}$ in metres) and recovery rates across major geological formations (Alluvial, Hard Rock, Basalt, Granite, and Sandstone) using CGWB specific yield ($S_y$) values.
+- Identifies stations with zero or negative seasonal recovery where natural recharge is failing to replenish the water table.
+- *Note:* Task 2 calculates station-level water table responses. Full volumetric water balance budgeting at the block scale ($R = S_y \cdot \Delta h \cdot A + Q_{net}$) is handled under Task 3.
 
-### 3. Aquifer Resource Evaluation & Statutory GEC-2015 Categorization (Task 3)
-- **Statutory CGWB GEC-2015 Administrative Assessment-Unit Categorization**:
-  - Evaluates administrative assessment units (Taluks / Blocks / Mandals) strictly based on the volumetric **Stage of Groundwater Extraction (SOE)**:
-    $$\text{SOE (\%)} = \left( \frac{\text{Current Annual Groundwater Extraction for All Uses}}{\text{Net Annual Groundwater Availability}} \right) \times 100\%$$
-  - Official Statutory Categories:
-    - **Safe:** $\text{SOE} \le 70\%$
-    - **Semi-Critical:** $70\% < \text{SOE} \le 90\%$
-    - **Critical:** $90\% < \text{SOE} \le 100\%$
-    - **Over-Exploited:** $\text{SOE} > 100\%$
-  - Scientific Integrity Safeguards: Water level trends provide advisory diagnostic context but **never overwrite statutory volumetric SOE categories**. Unverified or missing SOE strictly returns `unassessed`.
-- **Operational Point-Level Depth Screening Tiers** (Monitoring well depth intervals for local pump operational screening; strictly distinguished from administrative SOE categories):
-  - `0–8 m bgl`: High water table; shallow open wells and centrifugal pumps operational.
+### 3. Aquifer Assessment & Statutory GEC-2015 Categorization (Task 3)
+- **Official GEC-2015 Administrative Categorization:**
+  Evaluates administrative blocks or taluks strictly using the volumetric Stage of Groundwater Extraction (SOE):
+  $$\text{SOE (\%)} = \left( \frac{\text{Current Annual Groundwater Extraction for All Uses}}{\text{Net Annual Groundwater Availability}} \right) \times 100\%$$
+  The official statutory categories are:
+  - **Safe:** $\text{SOE} \le 70\%$
+  - **Semi-Critical:** $70\% < \text{SOE} \le 90\%$
+  - **Critical:** $90\% < \text{SOE} \le 100\%$
+  - **Over-Exploited:** $\text{SOE} > 100\%$
+- **Scientific Integrity Rule:** Water table trends provide advisory context on whether water levels are deepening or recovering, but they **never overwrite official statutory SOE categories**. If extraction data is missing or unverified, the system marks the unit as `unassessed` rather than assuming a category.
+- **Operational Depth Screening Tiers:**
+  Separate from administrative assessment, the interface displays physical depth intervals for individual monitoring wells to help with pump planning:
+  - `0–8 m bgl`: High water table; surface and shallow centrifugal pumps work well.
   - `8–15 m bgl`: Moderate depth; submersible pumps recommended.
-  - `15–25 m bgl`: Deep water table; increased energy consumption.
+  - `15–25 m bgl`: Deep water table; increased pumping energy required.
   - `>25 m bgl`: Deep water table; deep borewell infrastructure required.
-- **Non-Parametric Statistical Trend Diagnostics**:
-  - Hamed & Rao (1998) Modified Mann-Kendall test correcting for autocorrelation variance inflation ($V^*(S)$).
-  - Non-parametric Sen's slope estimator and Gilbert (1987) 95% confidence intervals with tied-rank correction.
-  - CGWB guideline threshold sensitivity ($0.10–0.20\text{ m/year}$).
+  *(These depth intervals are physical screening ranges for individual wells. They are never labeled as official GEC-2015 categories.)*
+- **Statistical Trend Diagnostics:**
+  - Hamed & Rao (1998) Modified Mann-Kendall test to account for autocorrelation in hydrological series.
+  - Sen's slope estimator with Gilbert (1987) 95% confidence intervals and tied-rank adjustments.
+  - Evaluation against the CGWB guideline threshold range ($0.10–0.20\text{ m/year}$).
 
-### 4. Machine Learning & Spatial-Temporal AI Forecasting (Task 4)
-- Pre-monsoon groundwater level forecasting trained on 390 long-history Karnataka CGWB observation wells (1994–2025).
-- **Strict 4-Way Chronological Split (Zero Data Leakage):**
-  - Train: 1998–2016 ($n = 6,870$ samples). Fits regression weights and scalers.
-  - Validation: 2017–2019 ($n = 1,074$ samples). Used for candidate model eligibility and selection.
-  - Calibration: 2020, 2022 ($n = 406$ samples). Used strictly for conformal prediction non-conformity calibration.
-  - Test Holdout: 2023–2025 ($n = 997$ samples). Completely unseen future evaluation.
-- **Empirical Model Benchmarking:** Linear Regression selected as production served model with lowest validation and test error among eligible candidates:
+### 4. Seasonal Machine Learning Forecasting (Task 4)
+- Forecasts future pre-monsoon water table depths (in metres below ground level) for the upcoming May measurement window.
+- Trained on 390 long-history Karnataka observation wells spanning 1994 to 2025.
+- Uses a strict 4-way chronological split to prevent temporal data leakage:
+  - **Training (1998–2016, 6,870 samples):** Fits model weights and scalers.
+  - **Validation (2017–2019, 1,074 samples):** Used for candidate model evaluation and selection.
+  - **Calibration (2020, 2022, 406 samples):** Used strictly to calibrate conformal uncertainty intervals.
+  - **Test (2023–2025, 997 samples):** Clean future holdout evaluation.
+- Evaluated against multiple candidates; Linear Regression was selected as the production model based on holdout performance:
   - Test RMSE: **2.50 m bgl**
   - Test MAE: **1.68 m bgl**
   - Test $R^2$: **0.55**
-- **Split Conformal Prediction (Distribution-Free Uncertainty):**
-  - Calibrated uncertainty radius $r = \mathbf{5.73\text{ m bgl}}$ at nominal 90% confidence level.
-  - Verified test coverage on unseen 2023–2025 holdout: **96.39%** (2023: 97.77%, 2024: 96.15%, 2025: 95.02%).
-- **Forecasting Horizons & Theoretical Coverage Scope:**
-  - Pre-Monsoon 2026: Single-step empirical **hindcast** from 2025 data (calibrated uncertainty).
-  - Pre-Monsoon 2027: Multi-step recursive **forecast** (uncertainty transparently designated as unavailable to prevent unwarranted statistical guarantees).
-
-### 5. Farmer-Centric UX & High-Contrast Visualization
-- Structured 3-section layout: Location Selector $\rightarrow$ Compact Forecast Summary $\rightarrow$ Full-Width Time-Series Graph $\rightarrow$ Collapsible Technical Reference.
-- Custom SVG time-series engine with physically inverted vertical axis ($0\text{ m}$ at surface scaling downward to $25+\text{ m bgl}$), matching physical intuition.
-- High-contrast typography and clear depth badges for agricultural operators.
-- *Scope Note:* Displays operational depth bands and expected change; automated irrigation valve control and solar pump throttling are conceptual future roadmap items.
+- **Conformal Prediction:** Uses split conformal inference to calculate a distribution-free uncertainty interval ($r = 5.73\text{ m bgl}$) at 90% confidence, achieving 96.39% empirical coverage across the 2023–2025 test set.
+- **Forecast Horizons:** Pre-monsoon 2026 is evaluated as a single-step hindcast from 2025 data (with calibrated uncertainty). Pre-monsoon 2027 is a multi-step recursive projection; uncertainty is designated as unavailable to avoid false statistical precision.
 
 ---
 
-## Model Benchmark & Evaluation Matrix
+## Why Linear Regression?
 
-All models were evaluated on the identical 997-sample holdout test partition (2023–2025):
+During development, five model architectures were evaluated on identical historical splits. A common question is why a linear model was chosen over deep learning methods like LSTM or Spatio-Temporal Graph Neural Networks (STGNN).
 
-| Candidate Architecture | Test MAE (m) | Test RMSE (m) | Test $R^2$ | Production Status | Scientific Rationale & Disqualification Reasons |
+Evaluation on the 997-sample unseen test holdout (2023–2025):
+
+| Model | Test MAE (m) | Test RMSE (m) | Test $R^2$ | Status | Practical Rationale |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **Linear Regression (OLS)** | **1.68** | **2.50** | **0.55** | **SELECTED** | **Lowest error among eligible candidates; deterministic; physically interpretable.** |
-| **Random Forest Regressor** | 1.74 | 2.57 | 0.52 | Eligible | Robust ensemble, but slightly higher holdout error; cannot extrapolate continuous trends. |
-| **Long Short-Term Memory (LSTM)** | 1.68 | 2.44 | 0.57 | Disqualified | Sequence starvation ($T \approx 25$ annual steps); missing year 2021 required artificial imputation; high initialization variance. |
-| **Spatio-Temporal Graph Neural Net (STGNN)** | 2.49 | 3.20 | 0.26 | Disqualified | Spatial graph sparsity (wells 15–40 km apart across fractured bedrock); edge fabrication; over-smoothing. |
-| **Persistence Baseline ($y_t = y_{t-1}$)** | 2.05 | 3.01 | 0.35 | Disqualified | Naive benchmark lacking multi-year lag weighting. |
+| **Linear Regression (OLS)** | **1.68** | **2.50** | **0.55** | **Selected** | **Lowest holdout error among eligible models; deterministic; transparent feature weights.** |
+| **Random Forest Regressor** | 1.74 | 2.57 | 0.52 | Eligible | Good baseline, but slightly higher holdout error; cannot extrapolate continuous deepening trends. |
+| **LSTM (Deep Recurrent)** | 1.68 | 2.44 | 0.57 | Disqualified | Annual series have only ~25 steps (sequence starvation); missing year 2021 required artificial imputation; high parameter initialization variance. |
+| **STGNN (Graph Neural Net)** | 2.49 | 3.20 | 0.26 | Disqualified | Wells are 15–40 km apart across fractured bedrock; distance-based graph edges fabricated connections across impermeable barriers; spatial over-smoothing. |
+| **Persistence Baseline ($y_t = y_{t-1}$)** | 2.05 | 3.01 | 0.35 | Disqualified | Simple benchmark to verify that learned models outperform a naive copy of the last reading. |
+
+The served Linear Regression model uses 4 historical lags ($y_{t-1}$ to $y_{t-4}$), coordinates, a 4-year non-parametric slope calculated with actual calendar years (handling the missing 2021 measurement naturally), and target year. It matches or outperforms complex alternatives on unseen data while running in less than 1 ms and offering full physical explainability.
 
 ---
 
@@ -114,81 +105,77 @@ All models were evaluated on the identical 997-sample holdout test partition (20
 
 ```mermaid
 flowchart TD
-    subgraph Data_Layer ["Data Ingestion & Storage"]
-        D1["CGWB 390 Verified Wells (1994-2025)"] --> P1["Data Pipeline / Ingestion Scripts"]
+    subgraph Data_Layer ["Data Layer"]
+        D1["CGWB 390 Wells (1994-2025)"] --> P1["Data Pipeline / Ingestion Scripts"]
         D2["IMD Precipitation Data (Curated)"] --> P1
         D3["DWLR Telemetry / Benchmark Grid"] --> P1
         P1 --> DB[("PostgreSQL 15 + TimescaleDB\nHypertables: dwlr_readings\n7-day Chunks")]
-        P1 --> RD[("Redis Local Cache Engine\nConfigured Service (Port 6379)")]
+        P1 --> RD[("Redis Local Cache Engine\nConfigured Port 6379")]
     end
 
-    subgraph Service_Layer ["Backend Microservices"]
+    subgraph Service_Layer ["Backend Services"]
         DB <--> API["FastAPI Core Backend (Port 8000)\nTasks 1, 2, 3 Analytics"]
-        API <--> AI["FastAPI AI Service (Port 8010)\nLinear Regression & Conformal Inference"]
+        API <--> AI["FastAPI AI Service (Port 8010)\nLinear Regression & Conformal Bounds"]
     end
 
-    subgraph Presentation_Layer ["Frontend Console"]
+    subgraph Presentation_Layer ["Frontend"]
         API <--> UI["React 18 Single Page Application (Port 3000)"]
         UI --> M1["Overview & Depth Screening Cards"]
-        UI --> M2["Interactive GeoJSON Vector Map"]
-        UI --> M3["Farmer-Centric Groundwater Forecast (Full-Width SVG)"]
-        UI --> M4["GEC-2015 Administrative Assessment Units"]
+        UI --> M2["Interactive GeoJSON Base Map"]
+        UI --> M3["Groundwater Forecast (Full-Width SVG)"]
+        UI --> M4["GEC-2015 Assessment Units"]
     end
 ```
 
 ---
 
-## Technology Stack & Native Windows Rationale
+## Technology Stack & Native Windows Setup
 
-### Technology Stack
-- **Frontend**: React 18, Semantic HTML5, Modular CSS design system, Responsive SVG vector visualization.
-- **Backend APIs**: Python 3.10+, FastAPI, Uvicorn ASGI server, SQLAlchemy ORM, Pydantic data validation.
-- **Database & Services**: PostgreSQL 15 with TimescaleDB time-series extension (7-day hypertables), Redis cache engine.
-- **Machine Learning**: Scikit-Learn, Joblib, NumPy, SciPy, PyTorch.
-- **Process Orchestration**: Native Windows PowerShell supervisor (`start-jaldrishti.ps1`, `stop-jaldrishti.ps1`).
+### Technology Choices
+- **Frontend:** React 18 with custom semantic HTML, CSS modules, and custom SVG charts. (Using native SVG allowed inverting the depth axis so deeper water levels physically move downwards, matching real-world intuition.)
+- **Backend APIs:** Python 3.10+, FastAPI, Uvicorn, SQLAlchemy ORM, and Pydantic validation.
+- **Database:** PostgreSQL 15 with TimescaleDB time-series extension (partitioned into 7-day chunks for efficient telemetry queries).
+- **Cache Service:** Redis (configured in environment, ready for horizontal scaling).
+- **Machine Learning:** Scikit-Learn, NumPy, SciPy, Joblib.
+- **Process Orchestration:** PowerShell launch scripts (`start-jaldrishti.ps1`, `stop-jaldrishti.ps1`).
 
-### Native Windows Runtime Rationale
-JalDrishti is designed to execute directly on native Windows:
-1. **Direct Windows Process Execution:** Runs directly in Windows PowerShell using a local Python virtual environment (`.venv`), Node.js, and portable local binaries in `.local_services/`.
-2. **Zero Docker/WSL2 Dependency:** Eliminates the requirement for Docker Desktop, Hyper-V configuration, or Linux virtual machine allocation on evaluation machines.
-3. **Streamlined Local Debugging:** Enables direct code debugging and process inspection with standard IDEs (VS Code) without container attachment friction.
-4. **Offline Capability:** The system executes completely offline during university evaluations without pulling remote container images.
-5. **Redis Service Role:** Redis is provisioned and configured in `.env`/`config.py` (`REDIS_URL = "redis://localhost:6379"`). Application endpoints currently query PostgreSQL/TimescaleDB via SQLAlchemy; Redis is provisioned as an integrated infrastructure service prepared for horizontal scaling.
+### Why Native Windows Instead of Docker?
+JalDrishti was configured to run directly on native Windows for practical development and evaluation reasons:
+1. **No Virtualization Overhead:** Avoids requiring Docker Desktop, Hyper-V, or WSL2 Linux virtual machines, allowing the stack to run smoothly on standard student laptops.
+2. **Direct Process Control:** A single PowerShell script manages the local Python virtual environment (`.venv`), Node.js, and portable binaries in `.local_services/`.
+3. **Straightforward Debugging:** Python code can be stepped through directly in VS Code without setting up container debugging attachments.
+4. **Offline Operation:** The entire project runs completely offline during university evaluations without pulling external images from Docker Hub.
+5. **Redis Role in Code:** Redis is started locally on port 6379 and configured via `REDIS_URL`. Current API routes query PostgreSQL/TimescaleDB directly through SQLAlchemy; Redis is provisioned in the architecture as a dedicated caching service for future high-traffic scaling.
 
 ---
 
-## Quick Start (Native Windows)
+## Quick Start (Windows)
 
 ### Prerequisites
-- **Operating System:** Windows 10 or 11 (64-bit)
-- **Python:** Version 3.10 or 3.11 installed and added to PATH
-- **Node.js:** Version 18.x or 20.x LTS with npm
-- **Git:** Standard Windows Git client
-- **Local Services:** PostgreSQL 15 and Redis binaries in `.local_services/`
+- Windows 10 or 11 (64-bit)
+- Python 3.10 or 3.11 installed and added to PATH
+- Node.js 18.x or 20.x LTS with npm
+- Git for Windows
+- Local PostgreSQL 15 and Redis binaries placed in `.local_services/` (see [LOCAL_SETUP.md](./LOCAL_SETUP.md))
 
----
-
-### Single-Command Automated Startup
-
-Open Windows PowerShell in the repository root:
+### Starting the Application
+Open a PowerShell terminal in the repository root and run:
 
 ```powershell
-# Start all services: PostgreSQL, Redis, Backend, AI Service, and React Frontend
 .\start-jaldrishti.ps1
 ```
 
-The script automatically:
-1. Validates Python virtual environment and Node.js runtimes.
-2. Starts native PostgreSQL (TimescaleDB) on port `5432` from `.local_services/`.
-3. Starts native Redis on port `6379` from `.local_services/`.
-4. Launches FastAPI Core Backend on `http://localhost:8000`.
-5. Launches FastAPI AI Service on `http://localhost:8010`.
-6. Launches React Web Console on `http://localhost:3000`.
-7. Monitors health endpoints and opens `http://localhost:3000` in the default browser.
+This script:
+1. Checks the Python virtual environment and Node.js runtime.
+2. Starts local PostgreSQL (TimescaleDB) on port 5432.
+3. Starts local Redis on port 6379.
+4. Starts the FastAPI Core Backend on `http://localhost:8000`.
+5. Starts the FastAPI AI Forecasting Service on `http://localhost:8010`.
+6. Starts the React development server on `http://localhost:3000`.
+7. Opens the web console in your default browser once services respond.
 
-### Clean Process Termination
-
-To stop all background processes:
+### Stopping the Application
+To shut down all running background services:
 
 ```powershell
 .\stop-jaldrishti.ps1
@@ -196,62 +183,67 @@ To stop all background processes:
 
 ---
 
-## Automated Testing & Quality Assurance
+## Testing & Verification
 
-Verified automated test execution:
+The project includes automated tests for each layer of the application:
 
 ```powershell
-# 1. Run Backend & Algorithm Tests (40 passed, 1 skipped)
+# 1. Backend and hydrogeological algorithm tests
 .\.venv\Scripts\python.exe -m pytest backend/tests
 
-# 2. Run AI Forecasting Pipeline Tests (10 passed)
+# 2. Machine learning and forecasting pipeline tests
 .\.venv\Scripts\python.exe -m pytest ai/tests
 
-# 3. Run Frontend Automated Component Tests (13 passed)
+# 3. Frontend component tests
 npm test --prefix frontend -- --watchAll=false
 
-# 4. Run Frontend Production Build Verification (Successful)
+# 4. Frontend production build verification
 npm run build --prefix frontend
 
-# 5. Run Monte Carlo Statistical Simulation Suite (All 6 Scenarios Validated)
+# 5. Monte Carlo statistical trend simulation validation (1,000 iterations across 6 scenarios)
 .\.venv\Scripts\python.exe backend/algorithms/validate_trend_simulations.py
 ```
 
-*Verification Note:* Backend test suite reports **40 passed, 1 skipped** (the skipped test is an integration test requiring a live PostgreSQL instance running on port 5432). AI suite reports **10 passed**. Frontend suite reports **13 passed**. Production build compiles with **0 errors and 0 warnings**.
+### Verified Test Results
+- **Backend Tests:** 40 passed, 1 skipped (the skipped test is an integration test requiring a live PostgreSQL database running on port 5432).
+- **AI Tests:** 10 passed.
+- **Frontend Tests:** 13 passed across 2 suites (`app_sprint.test.js` and `map_projection.test.js`).
+- **Production Build:** Compiled cleanly with 0 errors and 0 warnings.
+- **Monte Carlo Simulations:** All 6 benchmark scenarios validated (Scenario 1 Null Type-I error: 0.0460; Scenario 2 Power: 100%; Scenario 3 Negative trend: 100% below guideline; Scenario 4 Autocorrelation: Type-I error 0.1400 vs 0.1430; Scenario 5 Tied ranks: 98.3% coverage; Scenario 6 Missing years: continuous-time Type-I error 0.0420).
 
 ---
 
-## REST API Reference
+## REST API Summary
 
-| Endpoint | Method | Description |
+| Endpoint | Method | Purpose |
 | :--- | :---: | :--- |
-| `/health` | `GET` | Core system health and service status |
-| `/api/stations/` | `GET` | Query monitoring stations with state/district filters |
-| `/api/stations/{id}` | `GET` | Detailed station metadata and recent readings |
-| `/api/stations/{id}/readings` | `GET` | Historical time-series telemetry data |
-| `/api/task1/fluctuation` | `GET` | Water table fluctuation analytics (7-day MA, rate) |
-| `/api/task1/anomalies` | `GET` | Active rapid drawdown anomalies |
-| `/api/task2/recharge` | `GET` | Dynamic rainfall recharge estimate via WTF method |
-| `/api/task3/evaluation` | `GET` | Assessment unit statutory GEC-2015 evaluation & SOE |
-| `/api/task3/units` | `GET` | Registry of all statutory assessment units |
-| `/api/ai/forecast` | `GET` | Pre-monsoon water table forecast with conformal bounds |
-| `/api/ai/metrics` | `GET` | Audited model performance metrics and split details |
+| `/health` | `GET` | Health check and service status |
+| `/api/stations/` | `GET` | Station list with optional state/district filters |
+| `/api/stations/{id}` | `GET` | Station metadata and most recent readings |
+| `/api/stations/{id}/readings` | `GET` | Historical water-level telemetry records |
+| `/api/task1/fluctuation` | `GET` | Water table fluctuation metrics and 7-day moving average |
+| `/api/task1/anomalies` | `GET` | Rapid drawdown detection alerts |
+| `/api/task2/recharge` | `GET` | Rainfall recharge estimate using water level recovery |
+| `/api/task3/evaluation` | `GET` | Official GEC-2015 assessment unit evaluation and SOE |
+| `/api/task3/units` | `GET` | List of administrative assessment units and status |
+| `/api/ai/forecast` | `GET` | Pre-monsoon water depth forecast with conformal interval |
+| `/api/ai/metrics` | `GET` | Audited model evaluation metrics and split details |
 
 ---
 
-## Authoritative Data Sources & Provenance
+## Data Provenance & Current Scope
 
-- **Central Ground Water Board (CGWB)**: Published hydrological yearbooks (*"Pre-monsoon Water Level Data 1994–2025"*), GEC-2015 assessment norms, and hydrogeological formation specific yield values.
-- **National Hydrology Project (NHP)**: Automated Digital Water Level Recorder (DWLR) network telemetry protocols and piezometer configurations.
-- **India Meteorological Department (IMD)**: Gridded daily precipitation dataset ($0.25^\circ \times 0.25^\circ$).
-- *Integration Note:* The current operational deployment utilizes curated historical datasets (390 Karnataka wells, 1994–2025, and 78 national benchmark nodes). Real-time automated continuous streaming from India-WRIS and live IMD APIs represents a target architectural capability; scraper modules (`backend/fetch/`, `data/scripts/`) provide on-demand batch ingestion with local sample fallback.
+- **Groundwater Records:** 390 verified observation wells in Karnataka extracted from official CGWB yearbooks (*"Pre-monsoon Water Level Data 1994–2025"*), providing 28,544 validated station-years. 78 national benchmark nodes provide geographic continuity across 26 states for testing the interface.
+- **Precipitation Data:** Curated IMD gridded daily rainfall data ($0.25^\circ \times 0.25^\circ$) aggregated across monsoon seasons.
+- **Current Integration Scope:** Ingestion scripts in `data/scripts/` and `backend/fetch/` provide batch ingestion prototypes with local sample fallbacks. Continuous live automated streaming from India-WRIS and live IMD APIs represents a target capability requiring official ministry network credentials.
+- **Agricultural Features Scope:** The interface displays operational depth screening tiers (`0–8 m`, `8–15 m`, `15–25 m`, `>25 m`) and expected changes to assist local well awareness. Automated irrigation valve scheduling and smart solar pump integration are conceptual roadmap proposals.
 
 ---
 
-## License & Ownership
+## License & Author
 
 - **Project:** JalDrishti  
-- **Lead Developer & Author:** Abhishek Jayagond  
-- **Repository:** [https://github.com/abhishekjayagond/JalDrishti](https://github.com/abhishekjayagond/JalDrishti)  
+- **Author:** Abhishek Jayagond  
+- **Repository:** https://github.com/abhishekjayagond/JalDrishti  
 - **License:** [MIT License](./LICENSE)  
-- **Copyright:** © 2026 Abhishek Jayagond. All Rights Reserved.
+- **Copyright:** (c) 2026 Abhishek Jayagond. All Rights Reserved.
