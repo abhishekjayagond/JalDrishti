@@ -37,6 +37,7 @@ build/
 .local_services/
 logs/
 *.log
+*.pid
 *.pids
 dump.rdb
 *.rdb

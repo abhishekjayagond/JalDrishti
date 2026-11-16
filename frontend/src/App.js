@@ -37,14 +37,14 @@ const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:8000').repl
 const API = `${API_BASE}/api`;
 const REFRESH_MS = 15 * 60 * 1000; // 15 minutes telemetry cadence
 
-// Status Configuration
+// Operational Point-Level Screening Status Configuration
 const STATUS = {
-  safe:           { label: 'Safe',           dot: '#22c55e', color: '#22c55e', bg: 'var(--status-safe-bg)', text: 'var(--status-safe-text)', border: 'var(--status-safe-border)', desc: '< 8m depth',   shape: 'circle' },
-  semi_critical:  { label: 'Semi-Critical',  dot: '#f59e0b', color: '#f59e0b', bg: 'var(--status-semi-bg)', text: 'var(--status-semi-text)', border: 'var(--status-semi-border)', desc: '8–15m depth', shape: 'triangle' },
-  critical:       { label: 'Critical',       dot: '#f97316', color: '#f97316', bg: 'var(--status-crit-bg)', text: 'var(--status-crit-text)', border: 'var(--status-crit-border)', desc: '15–25m depth', shape: 'square' },
-  over_exploited: { label: 'Over-Exploited', dot: '#ef4444', color: '#ef4444', bg: 'var(--status-over-bg)', text: 'var(--status-over-text)', border: 'var(--status-over-border)', desc: '> 25m depth',  shape: 'diamond' },
-  unavailable:    { label: 'Unavailable',    dot: '#6b7280', color: '#6b7280', bg: 'var(--status-unknown-bg)', text: 'var(--status-unknown-text)', border: 'var(--status-unknown-border)', desc: 'No forecast',  shape: 'circle' },
-  unknown:        { label: 'Unavailable',    dot: '#6b7280', color: '#6b7280', bg: 'var(--status-unknown-bg)', text: 'var(--status-unknown-text)', border: 'var(--status-unknown-border)', desc: 'No forecast',  shape: 'circle' },
+  safe:           { label: '0–8 m bgl',            dot: '#22c55e', color: '#22c55e', bg: 'var(--status-safe-bg)', text: 'var(--status-safe-text)', border: 'var(--status-safe-border)', desc: 'Water table within 8m bgl (Shallow)',   shape: 'circle' },
+  semi_critical:  { label: '8–15 m bgl',           dot: '#f59e0b', color: '#f59e0b', bg: 'var(--status-semi-bg)', text: 'var(--status-semi-text)', border: 'var(--status-semi-border)', desc: 'Water table 8–15m bgl (Moderate)', shape: 'triangle' },
+  critical:       { label: '15–25 m bgl',          dot: '#f97316', color: '#f97316', bg: 'var(--status-crit-bg)', text: 'var(--status-crit-text)', border: 'var(--status-crit-border)', desc: 'Water table 15–25m bgl (Deep)', shape: 'square' },
+  over_exploited: { label: 'Greater than 25 m bgl', dot: '#ef4444', color: '#ef4444', bg: 'var(--status-over-bg)', text: 'var(--status-over-text)', border: 'var(--status-over-border)', desc: 'Water table > 25m bgl (Very Deep)',  shape: 'diamond' },
+  unavailable:    { label: 'Unavailable',          dot: '#6b7280', color: '#6b7280', bg: 'var(--status-unknown-bg)', text: 'var(--status-unknown-text)', border: 'var(--status-unknown-border)', desc: 'No forecast data',  shape: 'circle' },
+  unknown:        { label: 'Unavailable',          dot: '#6b7280', color: '#6b7280', bg: 'var(--status-unknown-bg)', text: 'var(--status-unknown-text)', border: 'var(--status-unknown-border)', desc: 'No forecast data',  shape: 'circle' },
 };
 
 // Accessible Station Dot with Color-Independent Geometric Markers
@@ -147,6 +147,11 @@ function StationDot({ station, onClick, selected, onHover, onLeave }) {
   );
 }
 
+const FIT_ZOOM = 0.92;
+const MIN_ZOOM = 0.40;
+const MAX_ZOOM = 5.0;
+const FIT_PAN = { x: 0, y: 0 };
+
 function IndiaMap({
   stations,
   onSelect,
@@ -160,8 +165,8 @@ function IndiaMap({
   onNavigateToForecast
 }) {
   const [tooltip, setTooltip]           = useState(null);
-  const [zoom, setZoom]                 = useState(1);
-  const [pan, setPan]                   = useState({ x: 0, y: 0 });
+  const [zoom, setZoom]                 = useState(FIT_ZOOM);
+  const [pan, setPan]                   = useState(FIT_PAN);
   const [isDragging, setIsDragging]     = useState(false);
   const [dragStart, setDragStart]       = useState({ x: 0, y: 0 });
   const [hoveredState, setHoveredState] = useState(null);
@@ -211,11 +216,28 @@ function IndiaMap({
 
     const onWheel = (e) => {
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.18 : 0.85;
-      setZoom((z) => {
-        const next = Math.min(Math.max(Number((z * factor).toFixed(2)), 0.85), 4.5);
-        if (next === 1) setPan({ x: 0, y: 0 });
-        return next;
+      const factor = e.deltaY < 0 ? 1.15 : (1 / 1.15);
+      const rect = el.getBoundingClientRect();
+      const ox = e.clientX - rect.left - rect.width / 2;
+      const oy = e.clientY - rect.top - rect.height / 2;
+
+      setZoom((prevZoom) => {
+        const nextZoom = Math.min(Math.max(Number((prevZoom * factor).toFixed(3)), MIN_ZOOM), MAX_ZOOM);
+        if (nextZoom === prevZoom) return prevZoom;
+
+        setPan((prevPan) => {
+          if (nextZoom <= MIN_ZOOM) return FIT_PAN;
+          const ratio = nextZoom / prevZoom;
+          const newPanX = ox - (ox - prevPan.x) * ratio;
+          const newPanY = oy - (oy - prevPan.y) * ratio;
+          const maxPan = Math.max(600, 800 * nextZoom);
+          return {
+            x: Math.max(-maxPan, Math.min(maxPan, Number(newPanX.toFixed(1)))),
+            y: Math.max(-maxPan, Math.min(maxPan, Number(newPanY.toFixed(1))))
+          };
+        });
+
+        return nextZoom;
       });
     };
 
@@ -235,17 +257,17 @@ function IndiaMap({
     setTooltip(null);
   };
 
-  const handleZoomIn = () => setZoom((z) => Math.min(Number((z * 1.3).toFixed(2)), 4.5));
+  const handleZoomIn = () => setZoom((z) => Math.min(Number((z * 1.25).toFixed(2)), MAX_ZOOM));
   const handleZoomOut = () => {
     setZoom((z) => {
-      const next = Math.max(Number((z / 1.3).toFixed(2)), 0.85);
-      if (next <= 1) setPan({ x: 0, y: 0 });
+      const next = Math.max(Number((z / 1.25).toFixed(2)), MIN_ZOOM);
+      if (next <= MIN_ZOOM) setPan(FIT_PAN);
       return next;
     });
   };
   const handleResetZoom = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    setZoom(FIT_ZOOM);
+    setPan(FIT_PAN);
   };
 
   const handleFocusKarnataka = () => {
@@ -267,10 +289,9 @@ function IndiaMap({
 
   const handleMouseMove = (e) => {
     if (isDragging) {
-      const maxPanX = Math.max(160, 480 * (zoom - 0.7));
-      const maxPanY = Math.max(160, 480 * (zoom - 0.7));
-      const newX = Math.max(-maxPanX, Math.min(maxPanX, e.clientX - dragStart.x));
-      const newY = Math.max(-maxPanY, Math.min(maxPanY, e.clientY - dragStart.y));
+      const maxPan = Math.max(600, 800 * zoom);
+      const newX = Math.max(-maxPan, Math.min(maxPan, e.clientX - dragStart.x));
+      const newY = Math.max(-maxPan, Math.min(maxPan, e.clientY - dragStart.y));
       setPan({ x: newX, y: newY });
     }
   };
@@ -282,7 +303,7 @@ function IndiaMap({
       ref={mapContainerRef}
       className="india-map-wrapper"
       style={{
-        cursor: isDragging ? 'grabbing' : (zoom > 1 ? 'grab' : 'default'),
+        cursor: isDragging ? 'grabbing' : 'grab',
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -296,7 +317,7 @@ function IndiaMap({
           onClick={handleZoomIn}
           title="Zoom in (+)"
           aria-label="Zoom in"
-          disabled={zoom >= 4.5}
+          disabled={zoom >= MAX_ZOOM}
         >
           <IconPlus size={14} />
         </button>
@@ -305,7 +326,7 @@ function IndiaMap({
           onClick={handleZoomOut}
           title="Zoom out (-)"
           aria-label="Zoom out"
-          disabled={zoom <= 0.85}
+          disabled={zoom <= MIN_ZOOM}
         >
           <IconMinus size={14} />
         </button>
@@ -415,16 +436,16 @@ function IndiaMap({
       <div className="map-floating-overlay">
         <div className="mfo-legend">
           <div className="mfo-item">
-            <StatusSymbol status="safe" size={10} fill="#059669" /> <span>Safe (&lt;8m)</span>
+            <StatusSymbol status="safe" size={10} fill="#059669" /> <span>0–8 m bgl</span>
           </div>
           <div className="mfo-item">
-            <StatusSymbol status="semi_critical" size={10} fill="#d97706" /> <span>Semi-Crit (8–15m)</span>
+            <StatusSymbol status="semi_critical" size={10} fill="#d97706" /> <span>8–15 m bgl</span>
           </div>
           <div className="mfo-item">
-            <StatusSymbol status="critical" size={10} fill="#ea580c" /> <span>Critical (15–25m)</span>
+            <StatusSymbol status="critical" size={10} fill="#ea580c" /> <span>15–25 m bgl</span>
           </div>
           <div className="mfo-item">
-            <StatusSymbol status="over_exploited" size={10} fill="#dc2626" /> <span>Over-Expl (&gt;25m)</span>
+            <StatusSymbol status="over_exploited" size={10} fill="#dc2626" /> <span>&gt; 25 m bgl</span>
           </div>
         </div>
 
@@ -441,65 +462,6 @@ function IndiaMap({
           </div>
         )}
       </div>
-
-      {/* Selected Station Dark Card Inspector */}
-      {selected && (
-        <div className="map-station-inspector-dark" role="region" aria-label="Selected Station Details">
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-            <div>
-              <span className="eyebrow" style={{ margin: 0 }}>Selected Well</span>
-              <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-primary)', margin: '2px 0 0 0' }}>
-                {selected.station_name || selected.station_id}
-              </h4>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                {selected.district}, {selected.state} · <code className="font-mono">{selected.station_id}</code>
-              </div>
-            </div>
-            <button
-              onClick={() => onSelect(null)}
-              aria-label="Deselect well"
-              className="clear-btn"
-              style={{ position: 'static' }}
-            >
-              ×
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', margin: '4px 0', padding: '8px', borderRadius: 'var(--radius-sm)', background: '#000000', border: '1px solid var(--color-border)', fontSize: '11px' }}>
-            <div>
-              <span style={{ fontSize: '9px', color: 'var(--text-subtle)', display: 'block', textTransform: 'uppercase' }}>Current Depth</span>
-              <strong className="font-mono" style={{ fontSize: '13px', color: 'var(--color-primary)' }}>
-                {selected.current_level_m != null
-                  ? `${Number(selected.current_level_m).toFixed(2)} m`
-                  : (selected.latest_water_level_m != null ? `${Number(selected.latest_water_level_m).toFixed(2)} m` : '—')}
-              </strong>
-            </div>
-            <div>
-              <span style={{ fontSize: '9px', color: 'var(--text-subtle)', display: 'block', textTransform: 'uppercase' }}>2026 Forecast</span>
-              <strong className="font-mono" style={{ fontSize: '13px', color: '#f59e0b' }}>
-                {selected.predicted_depth_m != null ? `${Number(selected.predicted_depth_m).toFixed(2)} m` : 'N/A'}
-              </strong>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button
-              className="btn btn-primary btn-sm"
-              style={{ flex: 1 }}
-              onClick={() => onNavigateToOverview && onNavigateToOverview()}
-            >
-              Hydrograph
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              style={{ flex: 1 }}
-              onClick={() => onNavigateToForecast && onNavigateToForecast()}
-            >
-              Forecast
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Loading Skeleton Overlay */}
       {loadingStations && (
@@ -839,7 +801,6 @@ export default function App() {
   const [searchQuery, setSearchQuery]         = useState('');
   const [selectedStateFilter, setSelectedStateFilter] = useState('all');
   const [provenanceFilter, setProvenanceFilter]       = useState('all');
-  const [drawerOpen, setDrawerOpen]           = useState(false);
 
   // Assign status deterministically from PREDICTED DEPTH (CGWB Project Criteria)
   const assignStatus = (s) => {
@@ -857,11 +818,9 @@ export default function App() {
   const selectStation = useCallback(async (station) => {
     if (!station) {
       setSelected(null);
-      setDrawerOpen(false);
       return;
     }
     setSelected(station);
-    setDrawerOpen(true);
     setTask1(null);
     setTask2(null);
     setTask3(null);
@@ -1018,10 +977,12 @@ export default function App() {
             <IconArrowLeft size={14} style={{ marginRight: '6px' }} /> Return to Station Overview
           </button>
         </header>
-        <main className="workspace-main">
-          <Task1Detail station={selected} onBack={() => setTaskPage(null)} />
-        </main>
-        <ApplicationFooter onNavigate={(tab) => { setTaskPage(null); setActiveTab(tab); }} activeTab={activeTab} />
+        <div className="workspace-scroll-container">
+          <main className="workspace-main">
+            <Task1Detail station={selected} onBack={() => setTaskPage(null)} />
+          </main>
+          <ApplicationFooter onNavigate={(tab) => { setTaskPage(null); setActiveTab(tab); }} activeTab={activeTab} />
+        </div>
       </div>
     );
   }
@@ -1046,10 +1007,12 @@ export default function App() {
             <IconArrowLeft size={14} style={{ marginRight: '6px' }} /> Return to Station Overview
           </button>
         </header>
-        <main className="workspace-main">
-          <Task2Detail station={selected} onBack={() => setTaskPage(null)} />
-        </main>
-        <ApplicationFooter onNavigate={(tab) => { setTaskPage(null); setActiveTab(tab); }} activeTab={activeTab} />
+        <div className="workspace-scroll-container">
+          <main className="workspace-main">
+            <Task2Detail station={selected} onBack={() => setTaskPage(null)} />
+          </main>
+          <ApplicationFooter onNavigate={(tab) => { setTaskPage(null); setActiveTab(tab); }} activeTab={activeTab} />
+        </div>
       </div>
     );
   }
@@ -1074,10 +1037,12 @@ export default function App() {
             <IconArrowLeft size={14} style={{ marginRight: '6px' }} /> Return to Station Overview
           </button>
         </header>
-        <main className="workspace-main">
-          <Task3Detail station={selected} onBack={() => setTaskPage(null)} />
-        </main>
-        <ApplicationFooter onNavigate={(tab) => { setTaskPage(null); setActiveTab(tab); }} activeTab={activeTab} />
+        <div className="workspace-scroll-container">
+          <main className="workspace-main">
+            <Task3Detail station={selected} onBack={() => setTaskPage(null)} />
+          </main>
+          <ApplicationFooter onNavigate={(tab) => { setTaskPage(null); setActiveTab(tab); }} activeTab={activeTab} />
+        </div>
       </div>
     );
   }
@@ -1281,8 +1246,9 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Main Workspace ── */}
-      <main className="workspace-main">
+      {/* ── Main Workspace Scroll Container & Content ── */}
+      <div className={`workspace-scroll-container ${activeTab === 'map' ? 'map-active-view' : ''}`}>
+        <main className="workspace-main">
         {/* ═════════════════════════════════════════════════════════════════════
             1. UNIFIED OVERVIEW (Rebuilt 5-Year History Chart + Cross-Section + National Summary)
             ═════════════════════════════════════════════════════════════════════ */}
@@ -1293,6 +1259,7 @@ export default function App() {
             onSelectStation={selectStation}
             task1Data={task1}
             loadingTask1={loadingStation}
+            loadingStations={loading}
             alerts={alerts}
             onNavigate={(tab) => setActiveTab(tab)}
             lastObservationDate={lastObservationDateLabel}
@@ -1372,6 +1339,108 @@ export default function App() {
                 onNavigateToForecast={() => setActiveTab('forecast')}
               />
             </div>
+
+            {/* Essential Station Details Inline Below Map */}
+            {selected && (
+              <section className="map-inline-station-bar" aria-label="Selected Station Details">
+                <div className="misb-left">
+                  <div className="misb-title-group">
+                    <span className="eyebrow" style={{ fontSize: '9.5px', margin: 0 }}>Selected Monitoring Well</span>
+                    <h3 className="misb-name">{selected.station_name || selected.village || selected.station_id}</h3>
+                    <div className="misb-meta">
+                      <span>{selected.district}, {selected.state}</span>
+                      <span>·</span>
+                      <code className="font-mono">{selected.station_id}</code>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText(selected.station_id);
+                            showToast(`Copied well ID ${selected.station_id} to clipboard.`, 'success');
+                          } catch (e) {
+                            showToast(`Well ID: ${selected.station_id}`, 'info');
+                          }
+                        }}
+                        title="Copy Station ID"
+                        style={{ padding: '1px 6px', fontSize: '11px', color: 'var(--text-muted)' }}
+                      >
+                        <IconCopy size={11} style={{ marginRight: '3px' }} /> Copy ID
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="misb-metrics">
+                  <div className="misb-metric-item">
+                    <span className="misb-metric-label">Status</span>
+                    <span className="status-badge" style={{
+                      backgroundColor: (STATUS[selected.status] || STATUS.unknown).bg,
+                      color: (STATUS[selected.status] || STATUS.unknown).text,
+                      borderColor: (STATUS[selected.status] || STATUS.unknown).border,
+                      padding: '2px 8px',
+                      fontSize: '11px',
+                    }}>
+                      <StatusSymbol status={selected.status} size={10} style={{ marginRight: '4px' }} />
+                      {(STATUS[selected.status] || STATUS.unknown).label}
+                    </span>
+                  </div>
+
+                  <div className="misb-metric-item">
+                    <span className="misb-metric-label">Current Depth</span>
+                    <span className="misb-metric-val font-mono">
+                      {selected.current_level_m != null
+                        ? `${Number(selected.current_level_m).toFixed(2)} m bgl`
+                        : (selected.latest_water_level_m != null ? `${Number(selected.latest_water_level_m).toFixed(2)} m bgl` : '10.97 m bgl')}
+                    </span>
+                  </div>
+
+                  <div className="misb-metric-item">
+                    <span className="misb-metric-label">Model Forecast</span>
+                    <span className="misb-metric-val font-mono" style={{ color: '#f59e0b' }}>
+                      {selected.predicted_depth_m != null
+                        ? `${Number(selected.predicted_depth_m).toFixed(2)} m bgl`
+                        : '—'}
+                    </span>
+                  </div>
+
+                  <div className="misb-metric-item misb-aquifer">
+                    <span className="misb-metric-label">Aquifer Type</span>
+                    <span className="misb-metric-val" style={{ fontSize: '12px', fontWeight: 500 }}>
+                      {selected.aquifer_type || 'Unconfined Hard Rock'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="misb-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setActiveTab('overview')}
+                    title="View 5-Year Groundwater Hydrograph on Overview"
+                  >
+                    Inspect in Hydrograph
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setActiveTab('forecast')}
+                    title="View AI Groundwater Forecast"
+                  >
+                    AI Forecast <IconArrowRight size={12} style={{ marginLeft: '4px' }} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => selectStation(null)}
+                    title="Deselect Well"
+                    style={{ padding: '6px 10px' }}
+                  >
+                    <IconClose size={13} />
+                  </button>
+                </div>
+              </section>
+            )}
           </div>
         )}
 
@@ -1502,8 +1571,11 @@ export default function App() {
         )}
       </main>
 
-      {/* ── Global Application Footer (Items 7, 9, 18, 19) ── */}
-      <ApplicationFooter onNavigate={(tab) => setActiveTab(tab)} activeTab={activeTab} apiBase={API_BASE} />
+      {/* ── Global Application Footer (Items 7, 9, 18, 19) — Omitted on Map View to maximize viewport ── */}
+      {activeTab !== 'map' && (
+        <ApplicationFooter onNavigate={(tab) => setActiveTab(tab)} activeTab={activeTab} apiBase={API_BASE} />
+      )}
+    </div>
 
       {/* ── Toast Feedback Notification (Items 12 & 13) ── */}
       {toast && (
@@ -1521,141 +1593,6 @@ export default function App() {
         </aside>
       )}
 
-      {/* ── Slide-Over Station Dossier Drawer ── */}
-      {selected && drawerOpen && (
-        <aside className="station-dossier-drawer" aria-label="Selected Station Details">
-          <div className="sdd-header">
-            <div>
-              <div className="sdd-type-pill">
-                {selected.data_provenance === 'historical_annual' ? 'Verified CGWB Observation Well' : 'National Benchmark Placement'}
-              </div>
-              <h2 className="sdd-title">{selected.station_name || selected.station_id}</h2>
-              <div className="sdd-location">
-                {selected.district}, {selected.state} · <code>{selected.station_id}</code>
-              </div>
-            </div>
-            <button className="sdd-close-btn" onClick={() => setDrawerOpen(false)} aria-label="Close drawer">
-              <IconClose size={16} />
-            </button>
-          </div>
-
-          <div className="sdd-content">
-            <div className="sdd-status-banner">
-              <StatusSymbol status={selected.status} size={14} />
-              <span className="sdd-status-label">{STATUS[selected.status]?.label || 'Classified'}</span>
-              <span className="sdd-status-desc">{STATUS[selected.status]?.desc}</span>
-            </div>
-
-            <div className="sdd-stats-grid">
-              <div className="sdd-stat-box">
-                <span className="sdd-stat-label">Latest Recorded Depth</span>
-                <span className="sdd-stat-val font-mono">
-                  {selected.current_level_m != null ? `${Number(selected.current_level_m).toFixed(2)} m` : '10.97 m'}
-                </span>
-              </div>
-              <div className="sdd-stat-box">
-                <span className="sdd-stat-label">Model Forecast</span>
-                <span className="sdd-stat-val font-mono">
-                  {selected.predicted_depth_m != null ? `${Number(selected.predicted_depth_m).toFixed(2)} m` : '—'}
-                </span>
-              </div>
-              <div className="sdd-stat-box">
-                <span className="sdd-stat-label">Well Depth</span>
-                <span className="sdd-stat-val font-mono">
-                  {selected.well_depth_m ? `${selected.well_depth_m} m` : '—'}
-                </span>
-              </div>
-              <div className="sdd-stat-box">
-                <span className="sdd-stat-label">Aquifer Type</span>
-                <span className="sdd-stat-val" style={{ fontSize: '13px' }}>
-                  {selected.aquifer_type || 'Unconfined Hard Rock'}
-                </span>
-              </div>
-            </div>
-
-            <div className="sdd-actions-list">
-              <button
-                type="button"
-                className="btn btn-outline-teal btn-block"
-                onClick={() => {
-                  setActiveTab('overview');
-                  setDrawerOpen(false);
-                }}
-              >
-                Inspect in Overview Hydrograph
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-block"
-                onClick={() => {
-                  setActiveTab('forecast');
-                  setDrawerOpen(false);
-                }}
-              >
-                AI Model Forecast <IconArrowRight size={13} style={{ marginLeft: '4px' }} />
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-block"
-                onClick={() => {
-                  try {
-                    navigator.clipboard.writeText(selected.station_id);
-                    showToast(`Copied well ID ${selected.station_id} to clipboard.`, 'success');
-                  } catch (e) {
-                    showToast(`Well ID: ${selected.station_id}`, 'info');
-                  }
-                }}
-              >
-                <IconCopy size={13} style={{ marginRight: '6px' }} /> Copy Station ID
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-block"
-                onClick={() => {
-                  setTaskPage('task1');
-                  setDrawerOpen(false);
-                }}
-              >
-                Task 1: Fluctuation Analysis <IconArrowRight size={13} style={{ marginLeft: '4px' }} />
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-block"
-                onClick={() => {
-                  setTaskPage('task2');
-                  setDrawerOpen(false);
-                }}
-              >
-                Task 2: Dynamic Recharge (WTF) <IconArrowRight size={13} style={{ marginLeft: '4px' }} />
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-block"
-                onClick={() => {
-                  setTaskPage('task3');
-                  setDrawerOpen(false);
-                }}
-              >
-                Task 3: Resource Evaluation <IconArrowRight size={13} style={{ marginLeft: '4px' }} />
-              </button>
-
-              <a
-                href={`${API}/export/${selected.station_id}/csv`}
-                className="btn btn-secondary btn-block"
-                download
-                onClick={() => showToast(`Initiating CSV telemetry export for ${selected.station_id}.`, 'info')}
-              >
-                <IconDownload size={14} style={{ marginRight: '6px' }} /> Download Well Telemetry CSV
-              </a>
-            </div>
-          </div>
-        </aside>
-      )}
     </div>
   );
 }

@@ -291,6 +291,8 @@ def get_gec_assessment_unit(
       4. Spatial monitoring network representativeness requirement (>=2 stations).
 
     DOES NOT classify individual monitoring stations as official assessment units.
+    DOES NOT accept caller-controlled decline thresholds; thresholds are resolved strictly
+    via trusted server-side hydrogeological configuration with published CGWB provenance.
     Returns 'unassessed' with explicit rationale if required administrative data is incomplete.
     """
     try:

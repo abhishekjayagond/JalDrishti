@@ -40,6 +40,11 @@ from main import app
 from db.database import get_db
 from app.models.station import Base, Station, DWLRReading
 from app.services.assessment_unit import evaluate_block_administrative_unit, list_administrative_assessment_units
+from algorithms.task3_evaluation import (
+    HydrogeologicalThresholdRecord,
+    register_trusted_hydrogeological_threshold,
+    clear_trusted_hydrogeological_thresholds,
+)
 
 # In-memory SQLite database for deterministic API testing
 TEST_DB_URL = "sqlite:///:memory:"
@@ -536,8 +541,15 @@ def test_gec_assessment_unit_complete_flow():
     assert data["spatial_representativeness"]["is_met"] is True
     assert data["pre_monsoon_years_count"] == 10
     assert data["post_monsoon_years_count"] == 10
-    assert data["pre_monsoon_trend_decline"] is True
-    assert data["post_monsoon_trend_decline"] is True
+
+    # Because Anekal is unconfigured (no statutory threshold published by CGWB in booklets),
+    # threshold is None and trend validation status is not_evaluated.
+    assert data["significant_decline_threshold_m_per_year"] is None
+    assert data["trend_validation_status"] == "not_evaluated"
+    assert data["pre_monsoon_trend"] == "not_evaluated"
+    assert data["post_monsoon_trend"] == "not_evaluated"
+    assert data["pre_monsoon_trend_decline"] is None
+    assert data["post_monsoon_trend_decline"] is None
 
     # Annual coverage breakdown inspection
     pre_cov = data["pre_monsoon_annual_coverage"]
@@ -548,14 +560,16 @@ def test_gec_assessment_unit_complete_flow():
     assert pre_cov[0]["is_representative"] is True
     assert pre_cov[0]["mean_water_level_mbgl"] == 12.0
 
-    # Test 95% SOE with trend decline -> Critical
+    # Test 95% SOE -> Critical (official SOE category preserved without local threshold)
     params_crit = dict(params, stage_of_extraction_pct=95.0, existing_gross_draft_total_ham=9500.0)
     res_crit = client.get("/api/gec/assessment-unit/Anekal", params=params_crit)
+    assert res_crit.json()["official_category"] == "critical"
     assert res_crit.json()["category"] == "critical"
 
-    # Test >100% SOE -> Over-Exploited
+    # Test >100% SOE -> Over-Exploited (official SOE category preserved without local threshold)
     params_oe = dict(params, stage_of_extraction_pct=112.5, existing_gross_draft_total_ham=11250.0)
     res_oe = client.get("/api/gec/assessment-unit/Anekal", params=params_oe)
+    assert res_oe.json()["official_category"] == "over_exploited"
     assert res_oe.json()["category"] == "over_exploited"
 
 
@@ -598,7 +612,8 @@ def test_gec_assessment_unit_incomplete_seasonal_data():
     """
     Test 4: Incomplete seasonal records (<10 years pre- or post-monsoon).
     Devanahalli has only 8 years of pre-monsoon records.
-    Must return 'unassessed' with explicit rationale.
+    With verified SOE (75.0%), official category 'semi_critical' is retained,
+    while trend validation honestly reports 'insufficient_data'.
     """
     params = {
         "stage_of_extraction_pct": 75.0,
@@ -611,10 +626,12 @@ def test_gec_assessment_unit_incomplete_seasonal_data():
     assert res.status_code == 200
     data = res.json()
 
-    assert data["category"] == "unassessed"
+    assert data["official_category"] == "semi_critical"
+    assert data["category"] == "semi_critical"
+    assert data["trend_validation_status"] == "insufficient_data"
+    assert data["pre_monsoon_trend"] == "insufficient_data"
     assert data["pre_monsoon_years_count"] == 8
-    assert "Insufficient statutory seasonal trend evidence" in data["rationale"]
-    assert "at least 10 years of actual" in data["rationale"]
+    assert "Insufficient statutory seasonal trend" in data["trend_validation_reason"]
 
 
 def test_gec_assessment_unit_uneven_station_sampling_frequency():
@@ -651,22 +668,31 @@ def test_gec_assessment_unit_uneven_station_sampling_frequency():
 def test_gec_assessment_unit_insufficient_station_coverage():
     """
     Test 6: Insufficient station coverage (0 stations in block).
-    Must return 'unassessed' with explicit reason.
+    With verified SOE, returns official category and reports trend validation unavailable.
+    Without verified SOE, returns unassessed.
     """
     params = {
         "stage_of_extraction_pct": 75.0,
         "annual_extractable_groundwater_resource_ham": 10000.0,
         "existing_gross_draft_total_ham": 7500.0,
-        "soe_source": "CGWB 2023",
+        "soe_source": "CGWB Dynamic Ground Water Resources Assessment of India (2023)",
         "assessment_year": 2023,
     }
     res = client.get("/api/gec/assessment-unit/NonExistentBlockXYZ", params=params)
     assert res.status_code == 200
     data = res.json()
 
-    assert data["category"] == "unassessed"
+    # Retains verified official category
+    assert data["official_category"] == "semi_critical"
+    assert data["category"] == "semi_critical"
     assert data["station_count"] == 0
-    assert "0 monitoring stations located in administrative block" in data["rationale"]
+    assert data["trend_validation_status"] == "insufficient_data"
+    assert "0 monitoring stations" in data["trend_validation_reason"]
+
+    # Without verified SOE -> unassessed
+    res_nosoe = client.get("/api/gec/assessment-unit/NonExistentBlockXYZ")
+    assert res_nosoe.status_code == 200
+    assert res_nosoe.json()["category"] == "unassessed"
 
 
 def test_gec_assessment_unit_zero_soe():
@@ -743,8 +769,9 @@ def test_station_depth_alerts_are_labeled_exploratory():
 def test_regression_item1_one_station_insufficiency_returns_unassessed():
     """
     Item 1: Do not consider one station per year sufficient evidence of a representative
-    block monitoring network. A block with only 1 station must return Unassessed under
-    standard hydrogeological network principles (WMO No. 168 / CGWB Network Design Principles).
+    block monitoring network under standard hydrogeological network principles (WMO No. 168 / CGWB Network Design Principles).
+    The official category is retained from verified SOE (55.0% -> Safe), while trend validation
+    reports insufficient_data and spatial_representativeness is False.
     """
     params = {
         "stage_of_extraction_pct": 55.0,
@@ -758,11 +785,84 @@ def test_regression_item1_one_station_insufficiency_returns_unassessed():
     assert res.status_code == 200
     data = res.json()
 
-    assert data["category"] == "unassessed"
-    assert data["category_label"] == "Unassessed"
+    assert data["official_category"] == "safe"
+    assert data["category"] == "safe"
+    assert data["category_label"] == "Safe"
     assert data["station_count"] == 1
-    assert "Insufficient spatial monitoring network representativeness" in data["rationale"]
-    assert "At least 2 spatially distinct monitoring stations are required" in data["rationale"]
+    assert data["spatial_representativeness"]["is_met"] is False
+    assert data["trend_validation_status"] == "insufficient_data"
+    assert "Insufficient spatial monitoring network representativeness" in data["trend_validation_reason"]
+
+
+def test_api_reassessment_warning_preserves_official_category():
+    """
+    Verify API behavior for GEC-2015 reassessment checks:
+      1. Safe (SOE <= 70%) with dual declining trends in Anekal -> Safe official category, needs_reassessment trend status.
+      2. Over-Exploited (SOE > 100%) with stable trends in Karkala -> Over-Exploited official category, needs_reassessment trend status.
+      3. Trend warnings NEVER alter or overwrite official categories.
+      4. Without registered hydrogeological thresholds, trend status reports 'not_evaluated' while official category is retained.
+    """
+    # 1. First verify unconfigured behavior: official category retained, trend validation not_evaluated
+    clear_trusted_hydrogeological_thresholds()
+    params_safe_decline = {
+        "stage_of_extraction_pct": 60.0,
+        "annual_extractable_groundwater_resource_ham": 10000.0,
+        "existing_gross_draft_total_ham": 6000.0,
+        "soe_source": "CGWB Dynamic Ground Water Resources Assessment of India (2023)",
+        "assessment_year": 2023,
+    }
+    res_unconf = client.get("/api/gec/assessment-unit/Anekal", params=params_safe_decline)
+    assert res_unconf.status_code == 200
+    d_unconf = res_unconf.json()
+    assert d_unconf["official_category"] == "safe"
+    assert d_unconf["category"] == "safe"
+    assert d_unconf["trend_validation_status"] == "not_evaluated"
+
+    # 2. Register verified test threshold records to test physical threshold comparison & reassessment triggers
+    rec_anekal = HydrogeologicalThresholdRecord(
+        block="Anekal", state="Karnataka", district="Bengaluru Urban", threshold_m_per_year=0.15,
+        source_publication_title="Test Groundwater Publication", source_url="https://cgwb.gov.in/test.pdf",
+        page_table_reference="p. 10", hydrogeological_formation="Crystalline granite", justification="Hard rock threshold",
+    )
+    rec_karkala = HydrogeologicalThresholdRecord(
+        block="Karkala", state="Karnataka", district="Udupi", threshold_m_per_year=0.10,
+        source_publication_title="Test Groundwater Publication", source_url="https://cgwb.gov.in/test.pdf",
+        page_table_reference="p. 12", hydrogeological_formation="Laterite", justification="Laterite coastal threshold",
+    )
+    register_trusted_hydrogeological_threshold(rec_anekal)
+    register_trusted_hydrogeological_threshold(rec_karkala)
+
+    try:
+        # Case 1: Safe block (SOE = 60.0%) in Anekal (which has significant dual decline trends)
+        res1 = client.get("/api/gec/assessment-unit/Anekal", params=params_safe_decline)
+        assert res1.status_code == 200
+        d1 = res1.json()
+        assert d1["official_category"] == "safe"
+        assert d1["category"] == "safe"
+        assert d1["trend_validation_status"] == "needs_reassessment"
+        assert d1["pre_monsoon_trend"] == "declining"
+        assert d1["post_monsoon_trend"] == "declining"
+        assert "reassessment per GEC-2015" in d1["trend_validation_reason"]
+
+        # Case 2: Over-Exploited block (SOE = 115.0%) in Karkala (which has stable, non-declining trends)
+        params_oe_stable = {
+            "stage_of_extraction_pct": 115.0,
+            "annual_extractable_groundwater_resource_ham": 10000.0,
+            "existing_gross_draft_total_ham": 11500.0,
+            "soe_source": "CGWB Dynamic Ground Water Resources Assessment of India (2023)",
+            "assessment_year": 2023,
+        }
+        res2 = client.get("/api/gec/assessment-unit/Karkala", params=params_oe_stable)
+        assert res2.status_code == 200
+        d2 = res2.json()
+        assert d2["official_category"] == "over_exploited"
+        assert d2["category"] == "over_exploited"
+        assert d2["trend_validation_status"] == "needs_reassessment"
+        assert d2["pre_monsoon_trend"] == "no_decline"
+        assert d2["post_monsoon_trend"] == "no_decline"
+        assert "potential localized recharge buffer" in d2["trend_validation_reason"]
+    finally:
+        clear_trusted_hydrogeological_thresholds()
 
 
 def test_regression_item2_fake_and_unverified_soe_provenance_returns_unassessed():
@@ -881,6 +981,95 @@ def test_regression_item4_duplicate_block_names_across_districts():
     assert "STN_RAMPUR_B1" not in data_a["station_ids"]
 
 
+def test_api_caller_cannot_manipulate_assessment_thresholds():
+    """
+    Item 1 & 6: Prove API callers cannot manipulate assessment results by supplying their own thresholds.
+    1. Caller tries to pass arbitrary threshold overrides via query params:
+       - significant_decline_threshold_m_per_year=0.0001 (attempt to force decline)
+       - significant_decline_threshold_m_per_year=999.0 (attempt to force no decline)
+       The API MUST ignore caller overrides and strictly enforce the trusted server-side
+       hydrogeological configuration (0.15 m/yr for Anekal).
+    2. Response must include verified server-side threshold provenance:
+       - threshold_source_publication
+       - threshold_source_url
+       - threshold_page_table_reference
+       - threshold_hydrogeological_formation
+       - threshold_justification
+    3. Response must include both exploratory OLS diagnostics and Modified Mann-Kendall statistics.
+    4. For an unsupported assessment unit without independent hydrogeological justification
+       (e.g., Kudligi with verified SOE), threshold must be None and trend validation must return
+       'not_evaluated' rather than inventing a threshold.
+    """
+    base_params = {
+        "stage_of_extraction_pct": 60.0,
+        "annual_extractable_groundwater_resource_ham": 10000.0,
+        "existing_gross_draft_total_ham": 6000.0,
+        "soe_source": "CGWB Dynamic Ground Water Resources Assessment of India (2023)",
+        "assessment_year": 2023,
+    }
+
+    test_rec = HydrogeologicalThresholdRecord(
+        block="Anekal",
+        state="Karnataka",
+        district="Bengaluru Urban",
+        threshold_m_per_year=0.15,
+        source_publication_title="Ground Water Information Booklet, Bangalore Urban District, Karnataka State (Central Ground Water Board)",
+        source_url="https://cgwb.gov.in/sites/default/files/2022-10/bangalore-urban-gwib.pdf",
+        page_table_reference="Section 4.0 'Hydrogeology', Table 3",
+        hydrogeological_formation="Precambrian Crystalline Complex granite/gneiss",
+        justification="Crystalline hard-rock fracture system with low storativity.",
+    )
+    register_trusted_hydrogeological_threshold(test_rec)
+
+    try:
+        # Attempt 1: Caller supplies ultra-low threshold (0.0001 m/yr)
+        params_low = dict(base_params)
+        params_low["significant_decline_threshold_m_per_year"] = 0.0001
+        res_low = client.get("/api/gec/assessment-unit/Anekal", params=params_low)
+        assert res_low.status_code == 200
+        d_low = res_low.json()
+        assert d_low["significant_decline_threshold_m_per_year"] == 0.15
+        assert d_low["threshold_source_publication"] is not None
+        assert "Bangalore Urban District" in d_low["threshold_source_publication"]
+        assert "bangalore-urban-gwib.pdf" in d_low["threshold_source_url"]
+        assert "Section 4.0" in d_low["threshold_page_table_reference"]
+        assert "Precambrian Crystalline" in d_low["threshold_hydrogeological_formation"]
+        assert "Crystalline hard-rock" in d_low["threshold_justification"]
+
+        # Attempt 2: Caller supplies ultra-high threshold (999.0 m/yr)
+        params_high = dict(base_params)
+        params_high["significant_decline_threshold_m_per_year"] = 999.0
+        res_high = client.get("/api/gec/assessment-unit/Anekal", params=params_high)
+        assert res_high.status_code == 200
+        d_high = res_high.json()
+        assert d_high["significant_decline_threshold_m_per_year"] == 0.15
+
+        # Check exploratory OLS diagnostic & Modified Mann-Kendall
+        assert d_high["pre_monsoon_exploratory_ols"] is not None
+        assert d_high["pre_monsoon_exploratory_ols"]["status"] == "exploratory_diagnostic_only"
+        assert "Ordinary least-squares" in d_high["pre_monsoon_exploratory_ols"]["caveat"]
+        assert d_high["pre_monsoon_modified_mann_kendall"] is not None
+        assert d_high["pre_monsoon_modified_mann_kendall"]["method"] == "Modified Mann-Kendall (Hamed & Rao, 1998)"
+
+        # Attempt 3: Query an unsupported assessment unit without registered threshold (e.g. Kudligi with verified SOE)
+        params_kudligi = {
+            "stage_of_extraction_pct": 82.0,
+            "annual_extractable_groundwater_resource_ham": 12000.0,
+            "existing_gross_draft_total_ham": 9840.0,
+            "soe_source": "CGWB Dynamic Ground Water Resources Assessment of India (2023)",
+            "assessment_year": 2023,
+        }
+        res_kudligi = client.get("/api/gec/assessment-unit/Kudligi", params=params_kudligi)
+        assert res_kudligi.status_code == 200
+        d_kudligi = res_kudligi.json()
+        assert d_kudligi["official_category"] == "semi_critical"
+        assert d_kudligi["significant_decline_threshold_m_per_year"] is None
+        assert d_kudligi["threshold_source_publication"] is None
+        assert d_kudligi["trend_validation_status"] in ("not_evaluated", "insufficient_data")
+    finally:
+        clear_trusted_hydrogeological_thresholds()
+
+
 def test_regression_item7_live_postgres_session():
     """
     Item 7: Verification against PostgreSQL/TimescaleDB session (not only in-memory SQLite).
@@ -931,3 +1120,96 @@ def test_regression_item7_live_postgres_session():
 
     finally:
         pg_db.close()
+
+
+def test_api_canonical_id_tampering_rejected():
+    """
+    Item 5: Enforce canonical ID consistency.
+    Querying Athni with Anekal's canonical ID ('KA:BENGALURU_URBAN:ANEKAL') must be rejected
+    as mismatched or tampered, returning 'unassessed'.
+    """
+    params = {
+        "canonical_id": "KA:BENGALURU_URBAN:ANEKAL",
+        "stage_of_extraction_pct": 85.52,
+        "annual_extractable_groundwater_resource_ham": 14500.0,
+        "existing_gross_draft_total_ham": 12400.0,
+        "soe_source": "CGWB Dynamic Ground Water Resources Assessment of India (2023)",
+        "assessment_year": 2023,
+    }
+    res = client.get("/api/gec/assessment-unit/Athni", params=params)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["official_category"] == "unassessed"
+    assert data["category"] == "unassessed"
+    assert "Mismatched or tampered canonical identifier is rejected" in data["rationale"]
+
+
+def test_api_fake_source_with_keyword_subversion_rejected():
+    """
+    Item 5: Source provenance verification must not rely on simple keyword matching.
+    Subversive strings embedding 'cgwb' like 'cgwb personal user estimate from pumping test'
+    must NOT bypass verification.
+    """
+    params = {
+        "stage_of_extraction_pct": 75.0,
+        "annual_extractable_groundwater_resource_ham": 10000.0,
+        "existing_gross_draft_total_ham": 7500.0,
+        "soe_source": "cgwb personal user estimate from pumping test",
+        "assessment_year": 2023,
+    }
+    res = client.get("/api/gec/assessment-unit/Anekal", params=params)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["official_category"] == "unassessed"
+    assert "Unverified Stage of Groundwater Extraction (SOE) provenance" in data["rationale"]
+
+
+def test_api_threshold_sensitivity_response_fields():
+    """
+    Item 2 & 3: Verify the REST API returns structured threshold sensitivity fields
+    and Sen's slope 95% confidence intervals.
+    """
+    rec_anekal = HydrogeologicalThresholdRecord(
+        block="Anekal",
+        state="Karnataka",
+        district="Bengaluru Urban",
+        threshold_m_per_year=0.15,
+        source_publication_title="Test Publication",
+        source_url="https://cgwb.gov.in/test.pdf",
+        page_table_reference="p. 10",
+        hydrogeological_formation="Granite",
+        justification="Hard rock threshold",
+    )
+    register_trusted_hydrogeological_threshold(rec_anekal)
+    try:
+        params = {
+            "stage_of_extraction_pct": 60.0,
+            "annual_extractable_groundwater_resource_ham": 10000.0,
+            "existing_gross_draft_total_ham": 6000.0,
+            "soe_source": "CGWB Dynamic Ground Water Resources Assessment of India (2023)",
+            "assessment_year": 2023,
+        }
+        res = client.get("/api/gec/assessment-unit/Anekal", params=params)
+        assert res.status_code == 200
+        data = res.json()
+
+        assert "overall_trend_sensitivity" in data
+        assert "pre_monsoon_threshold_sensitivity" in data
+        assert "post_monsoon_threshold_sensitivity" in data
+        assert data["pre_monsoon_threshold_sensitivity"] in (
+            "significant_across_guideline_range", "threshold_sensitive", "below_guideline_range", "insufficient_data", "not_evaluated"
+        )
+        assert data["post_monsoon_threshold_sensitivity"] in (
+            "significant_across_guideline_range", "threshold_sensitive", "below_guideline_range", "insufficient_data", "not_evaluated"
+        )
+        assert data["overall_trend_sensitivity"] in (
+            "significant_across_guideline_range", "threshold_sensitive", "below_guideline_range", "insufficient_data", "not_evaluated"
+        )
+        assert "pre_monsoon_sen_slope_ci_95" in data
+        assert "post_monsoon_sen_slope_ci_95" in data
+        if data["pre_monsoon_sen_slope_ci_95"]:
+            assert "lower" in data["pre_monsoon_sen_slope_ci_95"]
+            assert "upper" in data["pre_monsoon_sen_slope_ci_95"]
+    finally:
+        clear_trusted_hydrogeological_thresholds()
+

@@ -8,25 +8,72 @@
 .app-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   width: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow: hidden;
   background: var(--color-neutral);
 }
 
 /* ── Header ────────────────────────────────────────────────────────────────── */
 .unified-top-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 200;
   display: flex;
   align-items: center;
   gap: 0;
   height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+  flex-shrink: 0;
   padding: 0 24px;
   background: #000000;
   border-bottom: 1px solid var(--color-border);
+}
+
+/* ── Dedicated Workspace Scroll Container ──────────────────────────────────── */
+.workspace-scroll-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: #374151 #000000;
+  -webkit-overflow-scrolling: touch;
+}
+
+.workspace-scroll-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.workspace-scroll-container::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+.workspace-scroll-container::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 4px;
+}
+
+.workspace-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* Map page full-height view without scrolling */
+.workspace-scroll-container.map-active-view {
+  overflow: hidden;
+  height: calc(100vh - 56px);
+}
+
+.workspace-scroll-container.map-active-view .workspace-main {
+  height: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .brand-section {
@@ -64,6 +111,8 @@
   align-items: center;
   gap: 0;
   flex: 1;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .nav-tab-btn {
@@ -71,7 +120,7 @@
   align-items: center;
   gap: 6px;
   height: 56px;
-  padding: 0 14px;
+  padding: 0 12px;
   font-family: var(--font-interface);
   font-size: 13px;
   font-weight: 400;
@@ -81,6 +130,7 @@
   border-bottom: 2px solid transparent;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: color 0.15s ease, border-color 0.15s ease;
   position: relative;
 }
@@ -320,7 +370,7 @@
 
 /* ── Workspace Main ────────────────────────────────────────────────────────── */
 .workspace-main {
-  flex: 1;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -344,7 +394,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 20px;
+  padding: 22px;
 }
 
 /* alias for backwards compat — same styling */
@@ -823,10 +873,12 @@
 .map-page-layout {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 0;
+  height: 100%;
+  min-height: 0;
   width: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .search-input-map {
@@ -842,9 +894,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 24px;
+  padding: 10px 24px;
   background: #000000;
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
   flex-wrap: wrap;
 }
 
@@ -863,10 +916,11 @@
 }
 
 .map-canvas-container {
-  flex: 1;
+  flex: 1 1 0;
   position: relative;
   overflow: hidden;
-  min-height: 500px;
+  min-height: 0;
+  height: 100%;
 }
 
 /* ── India Map ───────────────────────────────────────────────────────────────── */
@@ -1056,165 +1110,103 @@
 
 .mfo-clear-btn:hover { color: var(--color-primary); }
 
-/* ── Map Station Inspector (on-map dark card) ───────────────────────────────── */
-.map-station-inspector-dark {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  z-index: 10;
-  width: 260px;
+/* ── Groundwater Map: Inline Selected Station Bar (Normal Content Flow) ───── */
+.map-inline-station-bar {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 14px;
+  border-top: 1px solid var(--color-border);
+  padding: 12px 24px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* ── Station Dossier Drawer (Slide-over) ─────────────────────────────────────── */
-.station-dossier-drawer {
-  position: fixed;
-  top: 56px;
-  right: 0;
-  bottom: 0;
-  z-index: 150;
-  width: 320px;
-  background: #000000;
-  border-left: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-}
-
-.sdd-header {
-  display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 20px;
-  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  gap: 16px;
+  flex-shrink: 0;
+  z-index: 20;
 }
 
-.sdd-type-pill {
-  display: inline-flex;
-  padding: 2px 8px;
-  font-family: var(--font-interface);
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--text-subtle);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 6px;
+.misb-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 220px;
 }
 
-.sdd-title {
+.misb-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.misb-name {
   font-family: var(--font-interface);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--color-primary);
-  line-height: 1.3;
-  margin-bottom: 4px;
+  margin: 0;
+  line-height: 1.25;
 }
 
-.sdd-location {
-  font-family: var(--font-body);
-  font-size: 12px;
+.misb-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
   color: var(--text-muted);
+  flex-wrap: wrap;
 }
 
-.sdd-location code {
-  font-family: var(--font-mono);
+.misb-meta code {
   color: var(--text-secondary);
 }
 
-.sdd-close-btn {
+.misb-metrics {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s ease;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
-.sdd-close-btn:hover { color: var(--color-primary); }
-
-.sdd-content {
-  padding: 20px;
+.misb-metric-item {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 2px;
 }
 
-.sdd-status-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-}
-
-.sdd-status-label {
+.misb-metric-label {
   font-family: var(--font-interface);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-primary);
-  flex: 1;
-}
-
-.sdd-status-desc {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.sdd-stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.sdd-stat-box {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.sdd-stat-label {
-  font-family: var(--font-interface);
-  font-size: 10px;
-  font-weight: 400;
+  font-size: 9.5px;
+  font-weight: 500;
   color: var(--text-subtle);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
-.sdd-stat-val {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 600;
+.misb-metric-val {
+  font-size: 14px;
+  font-weight: 700;
   color: var(--color-primary);
+  line-height: 1.2;
 }
 
-.sdd-actions-list {
+.misb-actions {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .map-inline-station-bar {
+    padding: 12px 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  .misb-actions {
+    justify-content: flex-start;
+  }
 }
 
 /* ── Directory Page ──────────────────────────────────────────────────────────── */
@@ -1416,15 +1408,468 @@
   to { transform: rotate(360deg); }
 }
 
-.refresh-spin {
+.refresh-spin,
+.spinner-icon {
   animation: spin 0.7s linear infinite;
 }
 
-/* ── National Distribution Chart ─────────────────────────────────────────────── */
+/* ── Operational Groundwater Depth Distribution ────────────────────────────── */
+.depth-dist-card {
+  min-height: 360px;
+  padding: 24px;
+}
+
 .national-distribution-chart-wrap {
   display: flex;
   flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.depth-dist-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
+}
+
+.depth-dist-title-group {
+  flex: 1;
+  min-width: 280px;
+}
+
+.depth-dist-heading {
+  font-family: var(--font-interface);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-primary);
+  letter-spacing: -0.01em;
+  margin: 4px 0 6px 0;
+}
+
+.depth-dist-subtext {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 620px;
+}
+
+/* ── Screening Metric Card (Requirement 2) ─────────────────────────────────── */
+.screening-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #000000;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 18px;
+  min-width: 220px;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease;
+}
+
+.screening-metric-card:hover {
+  border-color: var(--color-primary);
+}
+
+.sm-badge {
+  font-family: var(--font-interface);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.sm-primary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sm-metric-label {
+  font-family: var(--font-interface);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.sm-value-cluster {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.sm-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.sm-unit {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.sm-supporting-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
+.sm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+}
+
+.sm-count {
+  white-space: nowrap;
+}
+
+/* ── Depth Distribution SVG Container ──────────────────────────────────────── */
+.depth-chart-svg-container {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #000000;
+  padding: 16px 20px;
+}
+
+.depth-distribution-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 580px;
+  max-width: 100%;
+}
+
+.depth-dist-disclosure {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(55, 65, 81, 0.15);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.depth-dist-disclosure .disclosure-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-subtle);
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+/* ── Four Depth Screening Summary Cards ────────────────────────────────────── */
+.depth-bracket-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.depth-bracket-card {
+  background: #000000;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 120px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.depth-bracket-card:hover,
+.depth-bracket-card.active {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+}
+
+.dbc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.dbc-badge {
+  font-family: var(--font-interface);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.dbc-pct {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+  margin-left: auto;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.dbc-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-top: 2px;
+}
+
+.dbc-desc {
+  font-size: 11.5px;
+  color: var(--text-subtle);
+  line-height: 1.4;
+}
+
+/* ── Direct Telemetry Station Lookup (Requirement 3) ───────────────────────── */
+.station-lookup-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.station-lookup-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  gap: 10px;
+  background: #000000;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.station-lookup-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 16px;
+  background: #000000;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  gap: 8px;
+}
+
+.sle-icon-wrap {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(55, 65, 81, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.sle-title {
+  font-family: var(--font-interface);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.sle-desc {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  max-width: 280px;
+  margin-bottom: 4px;
+}
+
+.station-lookup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.station-lookup-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #000000;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.station-lookup-card:hover {
+  background: rgba(234, 234, 235, 0.04);
+  border-color: var(--color-primary);
+  transform: translateX(2px);
+}
+
+.station-lookup-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.slc-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slc-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slc-name {
+  font-family: var(--font-interface);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slc-bench-tag {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.slc-meta {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slc-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.slc-depth-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.slc-unit {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.slc-status-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slc-status-label {
+  font-family: var(--font-interface);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.slc-arrow {
+  color: var(--text-subtle);
+  flex-shrink: 0;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.station-lookup-card:hover .slc-arrow {
+  color: var(--color-primary);
+  transform: translateX(2px);
+}
+
+.station-lookup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 2px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.slf-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-xs {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+
+@media (max-width: 900px) {
+  .depth-bracket-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 540px) {
+  .depth-bracket-grid {
+    grid-template-columns: 1fr;
+  }
+  .screening-metric-card {
+    min-width: 100%;
+    width: 100%;
+  }
 }
 
 /* ── Loading State ───────────────────────────────────────────────────────────── */
@@ -1729,6 +2174,93 @@
   white-space: pre;
 }
 
+/* ── Farmer Forecast Simplified Grid ────────────────────────────────────────── */
+.farmer-forecast-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.22fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 960px) {
+  .farmer-forecast-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Farmer Forecast Summary Strip ─────────────────────────────────────────── */
+.farmer-summary-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 18px 22px;
+}
+
+.farmer-summary-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1.35fr 1.2fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+@media (max-width: 960px) {
+  .farmer-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+/* ── Farmer Forecast Value & Unit Styling (28-32px desktop, 24-28px mobile) ── */
+.farmer-forecast-val {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-family: var(--font-interface);
+  font-variant-numeric: tabular-nums;
+}
+
+.farmer-forecast-unit {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  margin-left: 4px;
+}
+
+.farmer-forecast-subtext {
+  font-size: 11.5px;
+  color: var(--text-subtle);
+  font-family: var(--font-interface);
+}
+
+@media (max-width: 768px) {
+  .farmer-forecast-val {
+    font-size: 26px;
+  }
+}
+
+/* ── Full-Width Forecast Chart Card ─────────────────────────────────────────── */
+.forecast-chart-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.forecast-chart-canvas-wrap {
+  width: 100%;
+  background: #000000;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+
 /* ── AI Forecast Panel ───────────────────────────────────────────────────────── */
 .forecast-layout {
   display: grid;
@@ -1755,6 +2287,12 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .forecast-selector-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .forecast-metric-card {
@@ -1998,11 +2536,6 @@
     gap: 8px;
   }
 
-  .station-dossier-drawer {
-    width: 100%;
-    max-width: 100vw;
-    top: 56px;
-  }
 
   .header-meta-compact {
     display: none;

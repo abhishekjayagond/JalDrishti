@@ -53,8 +53,10 @@ from app.models.station import Station, DWLRReading
 from algorithms.task3_evaluation import (
     aggregate_block_seasonal_trends,
     classify_gec2015_assessment_unit,
+    lookup_trusted_hydrogeological_threshold,
     MIN_DECADAL_TREND_YEARS,
     DEFAULT_MIN_STATIONS_PER_YEAR,
+    OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
 )
 from app.services.assessment_unit_registry import (
     validate_soe_provenance,
@@ -79,6 +81,8 @@ def evaluate_block_administrative_unit(
     db: Optional[Session] = None,
     readings_df: Optional[pd.DataFrame] = None,
     stations_df: Optional[pd.DataFrame] = None,
+    significant_decline_threshold_m_per_year: Optional[float] = None,
+    fallback_to_documented_threshold: bool = True,
 ) -> Dict[str, Any]:
     """
     Evaluate an administrative assessment unit (block/taluk) under statutory GEC-2015 methodology.
@@ -96,11 +100,20 @@ def evaluate_block_administrative_unit(
             "state": state,
             "administrative_level": "block_or_taluk",
             "is_official_assessment_unit": False,
+            "official_category": "unassessed",
             "category": "unassessed",
             "category_label": "Unassessed",
+            "trend_validation_status": "not_evaluated",
+            "pre_monsoon_trend": None,
+            "post_monsoon_trend": None,
+            "trend_validation_reason": (
+                "Unassessed: Valid administrative assessment unit (block/taluk) name is required. "
+                "Individual monitoring wells cannot be classified as official blocks, and district fallback is prohibited."
+            ),
             "stage_of_extraction_pct": None,
             "soe_source": str(soe_source).strip() if soe_source else None,
             "assessment_year": assessment_year,
+            "volumetric_resource": None,
             "station_count": 0,
             "station_ids": [],
             "weighting_method": "equal_station_year_weighting",
@@ -108,8 +121,25 @@ def evaluate_block_administrative_unit(
             "post_monsoon_years_count": 0,
             "pre_monsoon_trend_decline": None,
             "post_monsoon_trend_decline": None,
+            "pre_monsoon_slope_m_per_year": None,
+            "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_p_value": None,
+            "post_monsoon_p_value": None,
+            "pre_monsoon_exploratory_ols": None,
+            "post_monsoon_exploratory_ols": None,
+            "pre_monsoon_modified_mann_kendall": None,
+            "post_monsoon_modified_mann_kendall": None,
+            "significant_decline_threshold_m_per_year": None,
+            "threshold_record": None,
+            "threshold_source_publication": None,
+            "threshold_source_url": None,
+            "threshold_page_table_reference": None,
+            "threshold_hydrogeological_formation": None,
+            "threshold_justification": None,
+            "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
             "pre_monsoon_annual_coverage": [],
             "post_monsoon_annual_coverage": [],
+            "coverage_sufficient": False,
             "framework": "CGWB GEC-2015 Methodology",
             "statutory_scope": "administrative_assessment_unit",
             "rationale": (
@@ -125,119 +155,48 @@ def evaluate_block_administrative_unit(
 
     target_block = str(block_name).strip()
 
-    # Obtain station and reading data (either from pre-supplied DataFrames or database)
-    if stations_df is None or readings_df is None:
-        if db is None:
-            return _unassessed_response(
-                target_block,
-                f"Unassessed for {target_block}: Database session or station/reading DataFrames required.",
-                stage_of_extraction_pct=stage_of_extraction_pct,
-                soe_source=soe_source,
-                assessment_year=assessment_year,
-                district=district,
-                state=state,
-                canonical_id=canonical_id,
-            )
-
-        # Unambiguous Administrative Identification: Exact case-insensitive block matching (Item 4)
+    # Ambiguity check across districts if district is not specified
+    if not district and db is not None:
         base_block_query = db.query(Station).filter(func.lower(func.trim(Station.block)) == target_block.lower())
-
-        # Check for duplicate block names across districts if district is not specified
-        if not district:
-            all_block_stns = base_block_query.all()
-            unique_dists = sorted(list(set(s.district for s in all_block_stns if s.district)))
-            if len(unique_dists) > 1:
-                return _unassessed_response(
-                    target_block,
-                    (
-                        f"Unassessed: Ambiguous administrative block '{target_block}'. This block name exists in multiple "
-                        f"districts ({', '.join(unique_dists)}). Unambiguous administrative identification requires "
-                        "specifying the district or canonical administrative identifier to prevent accidental merging of stations across districts."
-                    ),
-                    stage_of_extraction_pct=stage_of_extraction_pct,
-                    soe_source=soe_source,
-                    assessment_year=assessment_year,
-                    canonical_id=canonical_id,
-                )
-
-        query = base_block_query
-        if state:
-            query = query.filter(func.lower(func.trim(Station.state)) == state.strip().lower())
-        if district:
-            query = query.filter(func.lower(func.trim(Station.district)) == district.strip().lower())
-        stations = query.all()
-
-        # Guard: 0 stations in block
-        if not stations or len(stations) == 0:
-            return _unassessed_response(
-                target_block,
-                f"Unassessed for {target_block}: Insufficient monitoring network: 0 monitoring stations located in administrative block '{target_block}'.",
-                stage_of_extraction_pct=stage_of_extraction_pct,
-                soe_source=soe_source,
-                assessment_year=assessment_year,
-                station_count=0,
-                district=district,
-                state=state,
-                canonical_id=canonical_id,
-            )
-
-        station_ids = [s.station_id for s in stations]
-
-        # Spatial Monitoring Network Representativeness: Guard against 1-station insufficiency (Item 1)
-        if len(stations) < 2:
+        all_block_stns = base_block_query.all()
+        unique_dists = sorted(list(set(s.district for s in all_block_stns if s.district)))
+        if len(unique_dists) > 1:
             return _unassessed_response(
                 target_block,
                 (
-                    f"Unassessed for {target_block}: Insufficient spatial monitoring network representativeness. "
-                    f"Administrative block '{target_block}' has only {len(stations)} monitoring station(s). "
-                    "Under standard hydrogeological network principles (WMO No. 168 / CGWB monitoring guidelines), "
-                    "a single point well cannot establish spatial representativeness across an entire administrative block. "
-                    "At least 2 spatially distinct monitoring stations are required to capture hydrogeological heterogeneity."
+                    f"Unassessed: Ambiguous administrative block '{target_block}'. This block name exists in multiple "
+                    f"districts ({', '.join(unique_dists)}). Unambiguous administrative identification requires "
+                    "specifying the district or canonical administrative identifier to prevent accidental merging of stations across districts."
                 ),
                 stage_of_extraction_pct=stage_of_extraction_pct,
                 soe_source=soe_source,
                 assessment_year=assessment_year,
-                station_count=len(stations),
-                station_ids=station_ids,
-                district=district or stations[0].district,
-                state=state or stations[0].state,
                 canonical_id=canonical_id,
             )
 
-        readings = (
-            db.query(DWLRReading)
-            .filter(DWLRReading.station_id.in_(station_ids))
-            .all()
-        )
+    # Resolve district and state from passed stations_df or db stations if possible
+    resolved_district = district
+    resolved_state = state
+    stations = []
+    if stations_df is not None and not stations_df.empty:
+        if not resolved_district and "district" in stations_df.columns:
+            resolved_district = stations_df["district"].iloc[0]
+        if not resolved_state and "state" in stations_df.columns:
+            resolved_state = stations_df["state"].iloc[0]
+    elif db is not None:
+        stn_query = db.query(Station).filter(func.lower(func.trim(Station.block)) == target_block.lower())
+        if state:
+            stn_query = stn_query.filter(func.lower(func.trim(Station.state)) == state.strip().lower())
+        if district:
+            stn_query = stn_query.filter(func.lower(func.trim(Station.district)) == district.strip().lower())
+        stations = stn_query.all()
+        if stations:
+            if not resolved_district:
+                resolved_district = stations[0].district
+            if not resolved_state:
+                resolved_state = stations[0].state
 
-        if not readings:
-            return _unassessed_response(
-                target_block,
-                f"Unassessed for {target_block}: No groundwater level readings available for {len(station_ids)} stations in block '{target_block}'.",
-                stage_of_extraction_pct=stage_of_extraction_pct,
-                soe_source=soe_source,
-                assessment_year=assessment_year,
-                station_count=len(station_ids),
-                station_ids=station_ids,
-                district=district or stations[0].district,
-                state=state or stations[0].state,
-                canonical_id=canonical_id,
-            )
-
-        stations_df = pd.DataFrame([s.to_dict() for s in stations])
-        readings_df = pd.DataFrame([{
-            "station_id": r.station_id,
-            "timestamp": r.timestamp,
-            "water_level_m": r.water_level_m,
-            "data_quality_flag": r.data_quality_flag or "G",
-            "is_anomaly": getattr(r, "is_anomaly", False),
-            "anomaly_reason": getattr(r, "anomaly_reason", None),
-        } for r in readings])
-
-    # Guard 2: Validate SOE Provenance against Authoritative CGWB Registry & Volumetric Accounting (Item 2)
-    resolved_district = district or (stations_df["district"].iloc[0] if "district" in stations_df.columns and not stations_df.empty else None)
-    resolved_state = state or (stations_df["state"].iloc[0] if "state" in stations_df.columns and not stations_df.empty else None)
-
+    # Guard 2: Validate SOE Provenance against Authoritative CGWB Registry & Volumetric Accounting
     is_prov_valid, prov_payload, prov_rationale = validate_soe_provenance(
         block_name=target_block,
         stage_of_extraction_pct=stage_of_extraction_pct,
@@ -251,7 +210,9 @@ def evaluate_block_administrative_unit(
     )
 
     if not is_prov_valid or prov_payload is None:
-        stn_ids = sorted(list(set(stations_df["station_id"].astype(str)))) if stations_df is not None and not stations_df.empty else []
+        stn_ids = [s.station_id for s in stations] if stations else (
+            sorted(list(set(stations_df["station_id"].astype(str)))) if stations_df is not None and not stations_df.empty else []
+        )
         return _unassessed_response(
             block_name=target_block,
             reason=prov_rationale,
@@ -273,6 +234,352 @@ def evaluate_block_administrative_unit(
     verified_resource = prov_payload.get("annual_extractable_groundwater_resource_ham")
     resolved_canonical_id = prov_payload.get("canonical_id")
 
+    volumetric_resource = {
+        "existing_gross_draft_total_ham": verified_draft,
+        "annual_extractable_groundwater_resource_ham": verified_resource,
+        "units": "hectare-metres (ham)",
+        "formula": "SOE (%) = (Existing Gross Draft / Annual Extractable Groundwater Resource) * 100%",
+    }
+
+    # Obtain station and reading DataFrames if not passed
+    if stations_df is None or readings_df is None:
+        if db is None:
+            # Verified SOE with no local station history / DB session
+            gec_res = classify_gec2015_assessment_unit(
+                stage_of_extraction_pct=verified_soe,
+                assessment_unit=target_block,
+                soe_source=verified_source,
+                assessment_year=verified_year,
+                require_authoritative_metadata=True,
+            )
+            return {
+                "assessment_unit": target_block,
+                "canonical_id": resolved_canonical_id,
+                "district": resolved_district,
+                "state": resolved_state,
+                "administrative_level": "block_or_taluk",
+                "is_official_assessment_unit": True,
+                "official_category": gec_res["official_category"],
+                "category": gec_res["category"],
+                "category_label": gec_res["category_label"],
+                "trend_validation_status": "not_evaluated",
+                "pre_monsoon_trend": None,
+                "post_monsoon_trend": None,
+                "trend_validation_reason": (
+                    f"Verified official category from CGWB SOE ({verified_soe:.1f}%). "
+                    "Database session or station/reading DataFrames not supplied for local seasonal trend validation."
+                ),
+                "stage_of_extraction_pct": gec_res["stage_of_extraction_pct"],
+                "soe_source": verified_source,
+                "assessment_year": verified_year,
+                "volumetric_resource": volumetric_resource,
+                "station_count": 0,
+                "station_ids": [],
+                "weighting_method": "equal_station_year_weighting",
+                "weighting_rationale": "Equal station-year seasonal averaging across monitoring wells.",
+                "spatial_representativeness": {
+                    "criteria": f">= 2 monitoring stations per block, and >= {min_stations_per_year} stations per representative year",
+                    "methodological_basis": "WMO No. 168 / CGWB Network Design Principles (sampling spatial variance)",
+                    "is_met": False,
+                },
+                "data_quality_screening": {
+                    "total_readings_screened": 0,
+                    "valid_readings_count": 0,
+                    "excluded_readings_count": 0,
+                    "exclusion_breakdown": {},
+                },
+                "pre_monsoon_years_count": 0,
+                "post_monsoon_years_count": 0,
+                "pre_monsoon_trend_decline": None,
+                "post_monsoon_trend_decline": None,
+                "pre_monsoon_slope_m_per_year": None,
+                "post_monsoon_slope_m_per_year": None,
+                "pre_monsoon_p_value": None,
+                "post_monsoon_p_value": None,
+                "pre_monsoon_exploratory_ols": None,
+                "post_monsoon_exploratory_ols": None,
+                "pre_monsoon_modified_mann_kendall": None,
+                "post_monsoon_modified_mann_kendall": None,
+                "significant_decline_threshold_m_per_year": gec_res.get("significant_decline_threshold_m_per_year"),
+                "threshold_record": gec_res.get("threshold_record"),
+                "threshold_source_publication": gec_res.get("threshold_source_publication"),
+                "threshold_source_url": gec_res.get("threshold_source_url"),
+                "threshold_page_table_reference": gec_res.get("threshold_page_table_reference"),
+                "threshold_hydrogeological_formation": gec_res.get("threshold_hydrogeological_formation"),
+                "threshold_justification": gec_res.get("threshold_justification"),
+                "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
+                "pre_monsoon_annual_coverage": [],
+                "post_monsoon_annual_coverage": [],
+                "coverage_sufficient": False,
+                "coverage_rationale": "No station readings available for trend validation.",
+                "framework": "CGWB GEC-2015 Methodology",
+                "statutory_scope": "administrative_assessment_unit",
+                "rationale": gec_res["rationale"],
+                "methodological_disclaimer": (
+                    "Statutory GEC-2015 categorization applies exclusively to administrative assessment units (taluks/blocks) "
+                    "using volumetric SOE and verified decadal trends. Individual monitoring wells are exploratory depth "
+                    "screening points and cannot be classified as official blocks."
+                ),
+            }
+
+        # Handle 0 stations located in block in DB
+        if not stations:
+            gec_res = classify_gec2015_assessment_unit(
+                stage_of_extraction_pct=verified_soe,
+                assessment_unit=target_block,
+                soe_source=verified_source,
+                assessment_year=verified_year,
+                require_authoritative_metadata=True,
+            )
+            return {
+                "assessment_unit": target_block,
+                "canonical_id": resolved_canonical_id,
+                "district": resolved_district,
+                "state": resolved_state,
+                "administrative_level": "block_or_taluk",
+                "is_official_assessment_unit": True,
+                "official_category": gec_res["official_category"],
+                "category": gec_res["category"],
+                "category_label": gec_res["category_label"],
+                "trend_validation_status": "insufficient_data",
+                "pre_monsoon_trend": "insufficient_data",
+                "post_monsoon_trend": "insufficient_data",
+                "trend_validation_reason": (
+                    f"Administrative block '{target_block}' has 0 monitoring stations in the local database. "
+                    f"Official category is retained from verified CGWB SOE ({verified_soe:.1f}%). "
+                    "Decadal trend validation is unavailable."
+                ),
+                "stage_of_extraction_pct": gec_res["stage_of_extraction_pct"],
+                "soe_source": verified_source,
+                "assessment_year": verified_year,
+                "volumetric_resource": volumetric_resource,
+                "station_count": 0,
+                "station_ids": [],
+                "weighting_method": "equal_station_year_weighting",
+                "weighting_rationale": "Equal station-year seasonal averaging across monitoring wells.",
+                "spatial_representativeness": {
+                    "criteria": f">= 2 monitoring stations per block, and >= {min_stations_per_year} stations per representative year",
+                    "methodological_basis": "WMO No. 168 / CGWB Network Design Principles (sampling spatial variance)",
+                    "is_met": False,
+                },
+                "data_quality_screening": {
+                    "total_readings_screened": 0,
+                    "valid_readings_count": 0,
+                    "excluded_readings_count": 0,
+                    "exclusion_breakdown": {},
+                },
+                "pre_monsoon_years_count": 0,
+                "post_monsoon_years_count": 0,
+                "pre_monsoon_trend_decline": None,
+                "post_monsoon_trend_decline": None,
+                "pre_monsoon_slope_m_per_year": None,
+                "post_monsoon_slope_m_per_year": None,
+                "pre_monsoon_p_value": None,
+                "post_monsoon_p_value": None,
+                "pre_monsoon_exploratory_ols": None,
+                "post_monsoon_exploratory_ols": None,
+                "pre_monsoon_modified_mann_kendall": None,
+                "post_monsoon_modified_mann_kendall": None,
+                "significant_decline_threshold_m_per_year": gec_res.get("significant_decline_threshold_m_per_year"),
+                "threshold_record": gec_res.get("threshold_record"),
+                "threshold_source_publication": gec_res.get("threshold_source_publication"),
+                "threshold_source_url": gec_res.get("threshold_source_url"),
+                "threshold_page_table_reference": gec_res.get("threshold_page_table_reference"),
+                "threshold_hydrogeological_formation": gec_res.get("threshold_hydrogeological_formation"),
+                "threshold_justification": gec_res.get("threshold_justification"),
+                "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
+                "pre_monsoon_annual_coverage": [],
+                "post_monsoon_annual_coverage": [],
+                "coverage_sufficient": False,
+                "coverage_rationale": f"0 monitoring stations located in administrative block '{target_block}'.",
+                "framework": "CGWB GEC-2015 Methodology",
+                "statutory_scope": "administrative_assessment_unit",
+                "rationale": gec_res["rationale"],
+                "methodological_disclaimer": (
+                    "Statutory GEC-2015 categorization applies exclusively to administrative assessment units (taluks/blocks) "
+                    "using volumetric SOE and verified decadal trends. Individual monitoring wells are exploratory depth "
+                    "screening points and cannot be classified as official blocks."
+                ),
+            }
+
+        station_ids = [s.station_id for s in stations]
+
+        # Spatial Monitoring Network Representativeness: Single-station network (<2 stations)
+        if len(stations) < 2:
+            gec_res = classify_gec2015_assessment_unit(
+                stage_of_extraction_pct=verified_soe,
+                assessment_unit=target_block,
+                soe_source=verified_source,
+                assessment_year=verified_year,
+                require_authoritative_metadata=True,
+            )
+            return {
+                "assessment_unit": target_block,
+                "canonical_id": resolved_canonical_id,
+                "district": resolved_district,
+                "state": resolved_state,
+                "administrative_level": "block_or_taluk",
+                "is_official_assessment_unit": True,
+                "official_category": gec_res["official_category"],
+                "category": gec_res["category"],
+                "category_label": gec_res["category_label"],
+                "trend_validation_status": "insufficient_data",
+                "pre_monsoon_trend": "insufficient_data",
+                "post_monsoon_trend": "insufficient_data",
+                "trend_validation_reason": (
+                    f"Insufficient spatial monitoring network representativeness. Administrative block '{target_block}' "
+                    f"has only {len(stations)} monitoring station(s). Under standard hydrogeological network principles "
+                    "(WMO No. 168 / CGWB monitoring guidelines), a single point well cannot establish spatial "
+                    "representativeness across an entire administrative block. Official category is retained from "
+                    f"verified CGWB SOE ({verified_soe:.1f}%)."
+                ),
+                "stage_of_extraction_pct": gec_res["stage_of_extraction_pct"],
+                "soe_source": verified_source,
+                "assessment_year": verified_year,
+                "volumetric_resource": volumetric_resource,
+                "station_count": len(stations),
+                "station_ids": station_ids,
+                "weighting_method": "equal_station_year_weighting",
+                "weighting_rationale": "Equal station-year seasonal averaging across monitoring wells.",
+                "spatial_representativeness": {
+                    "criteria": f">= 2 monitoring stations per block, and >= {min_stations_per_year} stations per representative year",
+                    "methodological_basis": "WMO No. 168 / CGWB Network Design Principles (sampling spatial variance)",
+                    "is_met": False,
+                },
+                "data_quality_screening": {
+                    "total_readings_screened": 0,
+                    "valid_readings_count": 0,
+                    "excluded_readings_count": 0,
+                    "exclusion_breakdown": {},
+                },
+                "pre_monsoon_years_count": 0,
+                "post_monsoon_years_count": 0,
+                "pre_monsoon_trend_decline": None,
+                "post_monsoon_trend_decline": None,
+                "pre_monsoon_slope_m_per_year": None,
+                "post_monsoon_slope_m_per_year": None,
+                "pre_monsoon_p_value": None,
+                "post_monsoon_p_value": None,
+                "pre_monsoon_exploratory_ols": None,
+                "post_monsoon_exploratory_ols": None,
+                "pre_monsoon_modified_mann_kendall": None,
+                "post_monsoon_modified_mann_kendall": None,
+                "significant_decline_threshold_m_per_year": gec_res.get("significant_decline_threshold_m_per_year"),
+                "threshold_record": gec_res.get("threshold_record"),
+                "threshold_source_publication": gec_res.get("threshold_source_publication"),
+                "threshold_source_url": gec_res.get("threshold_source_url"),
+                "threshold_page_table_reference": gec_res.get("threshold_page_table_reference"),
+                "threshold_hydrogeological_formation": gec_res.get("threshold_hydrogeological_formation"),
+                "threshold_justification": gec_res.get("threshold_justification"),
+                "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
+                "pre_monsoon_annual_coverage": [],
+                "post_monsoon_annual_coverage": [],
+                "coverage_sufficient": False,
+                "coverage_rationale": f"Insufficient spatial monitoring network ({len(stations)} station; >=2 required).",
+                "framework": "CGWB GEC-2015 Methodology",
+                "statutory_scope": "administrative_assessment_unit",
+                "rationale": gec_res["rationale"],
+                "methodological_disclaimer": (
+                    "Statutory GEC-2015 categorization applies exclusively to administrative assessment units (taluks/blocks) "
+                    "using volumetric SOE and verified decadal trends. Individual monitoring wells are exploratory depth "
+                    "screening points and cannot be classified as official blocks."
+                ),
+            }
+
+        readings = (
+            db.query(DWLRReading)
+            .filter(DWLRReading.station_id.in_(station_ids))
+            .all()
+        )
+
+        if not readings:
+            gec_res = classify_gec2015_assessment_unit(
+                stage_of_extraction_pct=verified_soe,
+                assessment_unit=target_block,
+                soe_source=verified_source,
+                assessment_year=verified_year,
+                require_authoritative_metadata=True,
+            )
+            return {
+                "assessment_unit": target_block,
+                "canonical_id": resolved_canonical_id,
+                "district": resolved_district,
+                "state": resolved_state,
+                "administrative_level": "block_or_taluk",
+                "is_official_assessment_unit": True,
+                "official_category": gec_res["official_category"],
+                "category": gec_res["category"],
+                "category_label": gec_res["category_label"],
+                "trend_validation_status": "insufficient_data",
+                "pre_monsoon_trend": "insufficient_data",
+                "post_monsoon_trend": "insufficient_data",
+                "trend_validation_reason": (
+                    f"No groundwater level readings available for {len(station_ids)} stations in block '{target_block}'. "
+                    f"Official category is retained from verified CGWB SOE ({verified_soe:.1f}%)."
+                ),
+                "stage_of_extraction_pct": gec_res["stage_of_extraction_pct"],
+                "soe_source": verified_source,
+                "assessment_year": verified_year,
+                "volumetric_resource": volumetric_resource,
+                "station_count": len(station_ids),
+                "station_ids": station_ids,
+                "weighting_method": "equal_station_year_weighting",
+                "weighting_rationale": "Equal station-year seasonal averaging across monitoring wells.",
+                "spatial_representativeness": {
+                    "criteria": f">= 2 monitoring stations per block, and >= {min_stations_per_year} stations per representative year",
+                    "methodological_basis": "WMO No. 168 / CGWB Network Design Principles (sampling spatial variance)",
+                    "is_met": True,
+                },
+                "data_quality_screening": {
+                    "total_readings_screened": 0,
+                    "valid_readings_count": 0,
+                    "excluded_readings_count": 0,
+                    "exclusion_breakdown": {},
+                },
+                "pre_monsoon_years_count": 0,
+                "post_monsoon_years_count": 0,
+                "pre_monsoon_trend_decline": None,
+                "post_monsoon_trend_decline": None,
+                "pre_monsoon_slope_m_per_year": None,
+                "post_monsoon_slope_m_per_year": None,
+                "pre_monsoon_p_value": None,
+                "post_monsoon_p_value": None,
+                "pre_monsoon_exploratory_ols": None,
+                "post_monsoon_exploratory_ols": None,
+                "pre_monsoon_modified_mann_kendall": None,
+                "post_monsoon_modified_mann_kendall": None,
+                "significant_decline_threshold_m_per_year": gec_res.get("significant_decline_threshold_m_per_year"),
+                "threshold_record": gec_res.get("threshold_record"),
+                "threshold_source_publication": gec_res.get("threshold_source_publication"),
+                "threshold_source_url": gec_res.get("threshold_source_url"),
+                "threshold_page_table_reference": gec_res.get("threshold_page_table_reference"),
+                "threshold_hydrogeological_formation": gec_res.get("threshold_hydrogeological_formation"),
+                "threshold_justification": gec_res.get("threshold_justification"),
+                "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
+                "pre_monsoon_annual_coverage": [],
+                "post_monsoon_annual_coverage": [],
+                "coverage_sufficient": False,
+                "coverage_rationale": f"No readings available for {len(station_ids)} stations in block '{target_block}'.",
+                "framework": "CGWB GEC-2015 Methodology",
+                "statutory_scope": "administrative_assessment_unit",
+                "rationale": gec_res["rationale"],
+                "methodological_disclaimer": (
+                    "Statutory GEC-2015 categorization applies exclusively to administrative assessment units (taluks/blocks) "
+                    "using volumetric SOE and verified decadal trends. Individual monitoring wells are exploratory depth "
+                    "screening points and cannot be classified as official blocks."
+                ),
+            }
+
+        stations_df = pd.DataFrame([s.to_dict() for s in stations])
+        readings_df = pd.DataFrame([{
+            "station_id": r.station_id,
+            "timestamp": r.timestamp,
+            "water_level_m": r.water_level_m,
+            "data_quality_flag": r.data_quality_flag or "G",
+            "is_anomaly": getattr(r, "is_anomaly", False),
+            "anomaly_reason": getattr(r, "anomaly_reason", None),
+        } for r in readings])
+
     # Perform Station-Year Normalized Multi-Station Seasonal Aggregation with Data Quality Screening
     agg = aggregate_block_seasonal_trends(
         readings_df=readings_df,
@@ -281,6 +588,8 @@ def evaluate_block_administrative_unit(
         district=resolved_district,
         state=resolved_state,
         min_stations_per_year=min_stations_per_year,
+        significant_decline_threshold_m_per_year=significant_decline_threshold_m_per_year,
+        fallback_to_documented_threshold=fallback_to_documented_threshold,
     )
 
     station_count = agg["station_count"]
@@ -290,80 +599,10 @@ def evaluate_block_administrative_unit(
     pre_coverage = agg["pre_monsoon_annual_coverage"]
     post_coverage = agg["post_monsoon_annual_coverage"]
     screening_audit = agg.get("data_quality_screening", {})
+    is_spatial_rep = bool(agg.get("spatial_representativeness_met", False) and station_count >= 2)
+    coverage_sufficient = bool(agg.get("coverage_sufficient", False))
 
-    # Guard 3: Spatial Network Representativeness check from aggregation
-    if not agg.get("spatial_representativeness_met", False) or station_count < 2:
-        return _unassessed_response(
-            target_block,
-            agg.get("coverage_rationale", f"Insufficient spatial monitoring network in block '{target_block}'."),
-            stage_of_extraction_pct=verified_soe,
-            soe_source=verified_source,
-            assessment_year=verified_year,
-            station_count=station_count,
-            station_ids=station_ids,
-            district=resolved_district,
-            state=resolved_state,
-            canonical_id=resolved_canonical_id,
-            data_quality_screening=screening_audit,
-        )
-
-    # Guard 4: Decadal Seasonal Completeness (must have >= 10 spatially representative years pre- AND post-monsoon separately)
-    if pre_years < MIN_DECADAL_TREND_YEARS or post_years < MIN_DECADAL_TREND_YEARS:
-        return {
-            "assessment_unit": target_block,
-            "canonical_id": resolved_canonical_id,
-            "district": resolved_district,
-            "state": resolved_state,
-            "administrative_level": "block_or_taluk",
-            "is_official_assessment_unit": True,
-            "category": "unassessed",
-            "category_label": "Unassessed",
-            "stage_of_extraction_pct": verified_soe,
-            "soe_source": verified_source,
-            "assessment_year": verified_year,
-            "volumetric_resource": {
-                "existing_gross_draft_total_ham": verified_draft,
-                "annual_extractable_groundwater_resource_ham": verified_resource,
-                "units": "hectare-metres (ham)",
-                "formula": "SOE (%) = (Existing Gross Draft / Annual Extractable Groundwater Resource) * 100%",
-            },
-            "station_count": station_count,
-            "station_ids": station_ids,
-            "weighting_method": agg["weighting_method"],
-            "weighting_rationale": agg["weighting_rationale"],
-            "spatial_representativeness": {
-                "criteria": f">= 2 monitoring stations per block, and >= {min_stations_per_year} stations per representative year",
-                "methodological_basis": "WMO No. 168 / CGWB Network Design Principles (sampling spatial variance)",
-                "is_met": True,
-            },
-            "data_quality_screening": screening_audit,
-            "pre_monsoon_years_count": pre_years,
-            "post_monsoon_years_count": post_years,
-            "pre_monsoon_trend_decline": agg["pre_monsoon_trend_decline"],
-            "post_monsoon_trend_decline": agg["post_monsoon_trend_decline"],
-            "pre_monsoon_slope_m_per_year": agg["pre_monsoon_slope_m_per_year"],
-            "post_monsoon_slope_m_per_year": agg["post_monsoon_slope_m_per_year"],
-            "pre_monsoon_annual_coverage": pre_coverage,
-            "post_monsoon_annual_coverage": post_coverage,
-            "coverage_sufficient": False,
-            "coverage_rationale": agg["coverage_rationale"],
-            "framework": "CGWB GEC-2015 Methodology",
-            "statutory_scope": "administrative_assessment_unit",
-            "rationale": (
-                f"Unassessed for {target_block}: Insufficient statutory seasonal trend evidence. "
-                f"GEC-2015 categorization strictly requires at least {MIN_DECADAL_TREND_YEARS} years of actual "
-                f"spatially representative pre-monsoon AND post-monsoon trend records separately. Available records: "
-                f"pre-monsoon={pre_years} years, post-monsoon={post_years} years (station-year normalized). "
-                "Station-year aggregated records do not meet the 10-year statutory threshold."
-            ),
-            "methodological_disclaimer": (
-                "Statutory GEC-2015 categorization applies exclusively to administrative assessment units (taluks/blocks) "
-                "using volumetric SOE and verified decadal trends. Individual monitoring wells are exploratory depth "
-                "screening points and cannot be classified as official blocks."
-            ),
-        }
-
-    # Evaluate official GEC-2015 categorization
+    # Evaluate official GEC-2015 categorization and independent trend validation
     gec_res = classify_gec2015_assessment_unit(
         stage_of_extraction_pct=verified_soe,
         pre_monsoon_trend_decline=agg["pre_monsoon_trend_decline"],
@@ -374,6 +613,15 @@ def evaluate_block_administrative_unit(
         soe_source=verified_source,
         assessment_year=verified_year,
         require_authoritative_metadata=True,
+        pre_monsoon_trend=agg.get("pre_monsoon_trend"),
+        post_monsoon_trend=agg.get("post_monsoon_trend"),
+        significant_decline_threshold_m_per_year=agg.get("significant_decline_threshold_m_per_year"),
+        fallback_to_documented_threshold=fallback_to_documented_threshold,
+        pre_monsoon_threshold_sensitivity=agg.get("pre_monsoon_threshold_sensitivity"),
+        post_monsoon_threshold_sensitivity=agg.get("post_monsoon_threshold_sensitivity"),
+        overall_trend_sensitivity=agg.get("overall_trend_sensitivity"),
+        pre_monsoon_sen_slope_ci_95=agg.get("pre_monsoon_sen_slope_ci_95"),
+        post_monsoon_sen_slope_ci_95=agg.get("post_monsoon_sen_slope_ci_95"),
     )
 
     return {
@@ -383,17 +631,25 @@ def evaluate_block_administrative_unit(
         "state": resolved_state,
         "administrative_level": "block_or_taluk",
         "is_official_assessment_unit": True,
+        "official_category": gec_res["official_category"],
         "category": gec_res["category"],
         "category_label": gec_res["category_label"],
+        "trend_validation_status": gec_res["trend_validation_status"],
+        "pre_monsoon_trend": gec_res["pre_monsoon_trend"],
+        "post_monsoon_trend": gec_res["post_monsoon_trend"],
+        "pre_monsoon_threshold_sensitivity": agg.get("pre_monsoon_threshold_sensitivity", gec_res.get("pre_monsoon_threshold_sensitivity")),
+        "post_monsoon_threshold_sensitivity": agg.get("post_monsoon_threshold_sensitivity", gec_res.get("post_monsoon_threshold_sensitivity")),
+        "overall_trend_sensitivity": agg.get("overall_trend_sensitivity", gec_res.get("overall_trend_sensitivity")),
+        "pre_monsoon_threshold_sensitivity_rationale": agg.get("pre_monsoon_threshold_sensitivity_rationale"),
+        "post_monsoon_threshold_sensitivity_rationale": agg.get("post_monsoon_threshold_sensitivity_rationale"),
+        "overall_trend_sensitivity_rationale": agg.get("overall_trend_sensitivity_rationale"),
+        "pre_monsoon_sen_slope_ci_95": agg.get("pre_monsoon_sen_slope_ci_95"),
+        "post_monsoon_sen_slope_ci_95": agg.get("post_monsoon_sen_slope_ci_95"),
+        "trend_validation_reason": gec_res["trend_validation_reason"],
         "stage_of_extraction_pct": gec_res["stage_of_extraction_pct"],
         "soe_source": verified_source,
         "assessment_year": verified_year,
-        "volumetric_resource": {
-            "existing_gross_draft_total_ham": verified_draft,
-            "annual_extractable_groundwater_resource_ham": verified_resource,
-            "units": "hectare-metres (ham)",
-            "formula": "SOE (%) = (Existing Gross Draft / Annual Extractable Groundwater Resource) * 100%",
-        },
+        "volumetric_resource": volumetric_resource,
         "station_count": station_count,
         "station_ids": station_ids,
         "weighting_method": agg["weighting_method"],
@@ -401,18 +657,32 @@ def evaluate_block_administrative_unit(
         "spatial_representativeness": {
             "criteria": f">= 2 monitoring stations per block, and >= {min_stations_per_year} stations per representative year",
             "methodological_basis": "WMO No. 168 / CGWB Network Design Principles (sampling spatial variance)",
-            "is_met": True,
+            "is_met": is_spatial_rep,
         },
         "data_quality_screening": screening_audit,
         "pre_monsoon_years_count": pre_years,
         "post_monsoon_years_count": post_years,
-        "pre_monsoon_trend_decline": agg["pre_monsoon_trend_decline"],
-        "post_monsoon_trend_decline": agg["post_monsoon_trend_decline"],
-        "pre_monsoon_slope_m_per_year": agg["pre_monsoon_slope_m_per_year"],
-        "post_monsoon_slope_m_per_year": agg["post_monsoon_slope_m_per_year"],
+        "pre_monsoon_trend_decline": gec_res["pre_monsoon_trend_decline"],
+        "post_monsoon_trend_decline": gec_res["post_monsoon_trend_decline"],
+        "pre_monsoon_slope_m_per_year": agg.get("pre_monsoon_slope_m_per_year"),
+        "post_monsoon_slope_m_per_year": agg.get("post_monsoon_slope_m_per_year"),
+        "pre_monsoon_p_value": agg.get("pre_monsoon_p_value"),
+        "post_monsoon_p_value": agg.get("post_monsoon_p_value"),
+        "pre_monsoon_exploratory_ols": agg.get("pre_monsoon_exploratory_ols"),
+        "post_monsoon_exploratory_ols": agg.get("post_monsoon_exploratory_ols"),
+        "pre_monsoon_modified_mann_kendall": agg.get("pre_monsoon_modified_mann_kendall"),
+        "post_monsoon_modified_mann_kendall": agg.get("post_monsoon_modified_mann_kendall"),
+        "significant_decline_threshold_m_per_year": agg.get("significant_decline_threshold_m_per_year"),
+        "threshold_record": agg.get("threshold_record"),
+        "threshold_source_publication": agg.get("threshold_source_publication"),
+        "threshold_source_url": agg.get("threshold_source_url"),
+        "threshold_page_table_reference": agg.get("threshold_page_table_reference"),
+        "threshold_hydrogeological_formation": agg.get("threshold_hydrogeological_formation"),
+        "threshold_justification": agg.get("threshold_justification"),
+        "statistical_limitations": agg.get("statistical_limitations", OLS_AUTOCORRELATION_LIMITATIONS_NOTE),
         "pre_monsoon_annual_coverage": pre_coverage,
         "post_monsoon_annual_coverage": post_coverage,
-        "coverage_sufficient": True,
+        "coverage_sufficient": coverage_sufficient,
         "coverage_rationale": agg["coverage_rationale"],
         "framework": "CGWB GEC-2015 Methodology",
         "statutory_scope": "administrative_assessment_unit",
@@ -497,7 +767,11 @@ def _unassessed_response(
     state: Optional[str] = None,
     canonical_id: Optional[str] = None,
     data_quality_screening: Optional[Dict[str, Any]] = None,
+    volumetric_resource: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    thresh_rec = lookup_trusted_hydrogeological_threshold(block_name)
+    threshold_dict = thresh_rec.to_dict() if thresh_rec else None
+
     return {
         "assessment_unit": block_name,
         "canonical_id": canonical_id,
@@ -505,11 +779,25 @@ def _unassessed_response(
         "state": state,
         "administrative_level": "block_or_taluk",
         "is_official_assessment_unit": True,
+        "official_category": "unassessed",
         "category": "unassessed",
         "category_label": "Unassessed",
+        "trend_validation_status": "not_evaluated",
+        "pre_monsoon_trend": None,
+        "post_monsoon_trend": None,
+        "pre_monsoon_threshold_sensitivity": "not_evaluated",
+        "post_monsoon_threshold_sensitivity": "not_evaluated",
+        "overall_trend_sensitivity": "not_evaluated",
+        "pre_monsoon_threshold_sensitivity_rationale": reason,
+        "post_monsoon_threshold_sensitivity_rationale": reason,
+        "overall_trend_sensitivity_rationale": reason,
+        "pre_monsoon_sen_slope_ci_95": None,
+        "post_monsoon_sen_slope_ci_95": None,
+        "trend_validation_reason": reason,
         "stage_of_extraction_pct": stage_of_extraction_pct,
         "soe_source": soe_source,
         "assessment_year": assessment_year,
+        "volumetric_resource": volumetric_resource,
         "station_count": station_count,
         "station_ids": station_ids or [],
         "weighting_method": "equal_station_year_weighting",
@@ -517,6 +805,22 @@ def _unassessed_response(
         "post_monsoon_years_count": 0,
         "pre_monsoon_trend_decline": None,
         "post_monsoon_trend_decline": None,
+        "pre_monsoon_slope_m_per_year": None,
+        "post_monsoon_slope_m_per_year": None,
+        "pre_monsoon_p_value": None,
+        "post_monsoon_p_value": None,
+        "pre_monsoon_exploratory_ols": None,
+        "post_monsoon_exploratory_ols": None,
+        "pre_monsoon_modified_mann_kendall": None,
+        "post_monsoon_modified_mann_kendall": None,
+        "significant_decline_threshold_m_per_year": thresh_rec.threshold_m_per_year if thresh_rec else None,
+        "threshold_record": threshold_dict,
+        "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+        "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+        "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+        "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+        "threshold_justification": thresh_rec.justification if thresh_rec else None,
+        "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
         "pre_monsoon_annual_coverage": [],
         "post_monsoon_annual_coverage": [],
         "coverage_sufficient": False,

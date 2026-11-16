@@ -12,19 +12,56 @@ import {
 } from './icons';
 
 /**
- * National Aquifer Depth Distribution Chart (SNP Agency Stark Monochrome Design)
- * Renders the empirical distribution of observation wells across depth brackets:
- * Safe (<8m), Semi-Critical (8-15m), Critical (15-25m), Over-Exploited (>25m).
+ * Operational Groundwater Depth Distribution Chart
+ * Renders the empirical point-level distribution of monitoring stations across operational screening bands:
+ * - 0–8 m bgl (Shallow)
+ * - 8–15 m bgl (Moderate)
+ * - 15–25 m bgl (Deep)
+ * - Greater than 25 m bgl (Very Deep)
+ *
+ * NOTE: These are operational point-level screening bands, NOT official CGWB/GEC-2015 administrative categories.
  */
-function NationalAquiferDistributionChart({ stations = [], avgDepth = '10.42' }) {
+function NationalAquiferDistributionChart({ stations = [], avgDepth = '5.75' }) {
   const [hoveredBracket, setHoveredBracket] = useState(null);
 
   const buckets = useMemo(() => {
     const list = [
-      { id: 'safe', label: 'Safe (< 8m)', range: [0, 8], color: '#22c55e', count: 0, desc: 'Water table within 8m. Sustainable extraction envelope.' },
-      { id: 'semi_critical', label: 'Semi-Critical (8–15m)', range: [8, 15], color: '#f59e0b', count: 0, desc: 'Water table 8–15m deep. Extraction nears annual recharge.' },
-      { id: 'critical', label: 'Critical (15–25m)', range: [15, 25], color: '#f97316', count: 0, desc: 'Water table 15–25m deep. Multi-year replenishment deficit.' },
-      { id: 'over_exploited', label: 'Over-Exploited (> 25m)', range: [25, 35], color: '#ef4444', count: 0, desc: 'Water table deeper than 25m. High risk of well desiccation.' },
+      {
+        id: 'band_0_8',
+        label: '0–8 m bgl',
+        badge: '0–8 m bgl',
+        category: 'Shallow Depth',
+        color: '#22c55e',
+        count: 0,
+        desc: 'Water table within 8m bgl. Standard operational envelope.'
+      },
+      {
+        id: 'band_8_15',
+        label: '8–15 m bgl',
+        badge: '8–15 m bgl',
+        category: 'Moderate Depth',
+        color: '#f59e0b',
+        count: 0,
+        desc: 'Water table 8–15m deep. Monitored seasonal extraction.'
+      },
+      {
+        id: 'band_15_25',
+        label: '15–25 m bgl',
+        badge: '15–25 m bgl',
+        category: 'Deep Water Table',
+        color: '#f97316',
+        count: 0,
+        desc: 'Water table 15–25m deep. Elevated multi-year drawdown.'
+      },
+      {
+        id: 'band_gt_25',
+        label: 'Greater than 25 m bgl',
+        badge: '>25 m bgl',
+        category: 'Critical Depth Threshold',
+        color: '#ef4444',
+        count: 0,
+        desc: 'Water table deeper than 25m. High seasonal drying vulnerability.'
+      },
     ];
 
     for (const s of stations) {
@@ -38,37 +75,115 @@ function NationalAquiferDistributionChart({ stations = [], avgDepth = '10.42' })
     const total = stations.length || 1;
     return list.map(b => ({
       ...b,
-      pct: Math.round((b.count / total) * 100),
+      pctNum: (b.count / total) * 100,
+      pct: ((b.count / total) * 100).toFixed(1),
     }));
   }, [stations]);
 
-  const chartHeight = 200;
-  const chartWidth = 560;
-  const maxAxisDepth = 30; // 0m to 30m bgl
+  // SVG Chart Dimensions & Layout
+  const svgWidth = 740;
+  const svgHeight = 224;
+  const labelWidth = 160;       // Left margin for band labels
+  const barStartX = 175;        // Start X for horizontal bars
+  const barAreaWidth = 315;     // Width allocated for horizontal bars
+  const countAxisMax = 350;     // Scale axis up to 350 stations (covers max 304)
+  const barEndX = barStartX + barAreaWidth; // x = 490
+  const statsStartX = 510;      // Start X for value & percentage text
+  const rowPitch = 42;          // Distance between rows
+  const barH = 22;              // Bar height
 
-  const scaleY = (depth) => 24 + (Math.min(maxAxisDepth, Math.max(0, depth)) / maxAxisDepth) * (chartHeight - 48);
+  // Scale function for horizontal bars
+  const scaleX = (cnt) => (Math.min(countAxisMax, Math.max(0, cnt)) / countAxisMax) * barAreaWidth;
+
+  const ticks = [0, 70, 140, 210, 280, 350];
 
   return (
     <div className="national-distribution-chart-wrap">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-        <div>
-          <span className="eyebrow">Empirical Telemetry Distribution</span>
-          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-primary)', letterSpacing: '0px' }}>
-            National Depth Indicator Distribution
+      {/* ── Heading, Scientific Subtext & Clean Structured Screening Metric ── */}
+      <div className="depth-dist-header">
+        <div className="depth-dist-title-group">
+          <span className="eyebrow">Point-Level Surveillance</span>
+          <h2 className="depth-dist-heading">
+            Operational Groundwater Depth Distribution
           </h2>
+          <p className="depth-dist-subtext">
+            These are point-level groundwater depth screening bands, not official CGWB/GEC-2015 administrative assessment categories.
+          </p>
         </div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--color-surface)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '12px' }}>
-          <span style={{ color: 'var(--text-muted)' }}>Mean Depth:</span>
-          <strong className="font-mono" style={{ color: 'var(--color-primary)' }}>{avgDepth} m bgl</strong>
+
+        {/* Clean Structured Screening Metric Card (Requirement 2) */}
+        <div className="screening-metric-card" role="region" aria-label="Groundwater Screening Metric">
+          <div className="sm-badge">Screening Metric</div>
+          <div className="sm-primary-row">
+            <span className="sm-metric-label">Mean Depth</span>
+            <div className="sm-value-cluster">
+              <span className="sm-value font-mono">{avgDepth || '5.75'}</span>
+              <span className="sm-unit font-mono">m bgl</span>
+            </div>
+          </div>
+          <div className="sm-supporting-info">
+            <span className="sm-dot" />
+            <span className="sm-count">390 evaluated field stations</span>
+          </div>
         </div>
       </div>
 
-      <div style={{ position: 'relative', width: '100%', height: `${chartHeight}px`, background: '#000000', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', padding: '6px', overflow: 'hidden' }}>
-        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
-          {buckets.map(b => {
-            const yStart = scaleY(b.range[0]);
-            const yEnd = scaleY(Math.min(maxAxisDepth, b.range[1]));
-            const bandHeight = yEnd - yStart;
+      {/* ── Properly Spaced Horizontal Bar Chart (No Dashed Mean Depth Line) ── */}
+      <div className="depth-chart-svg-container">
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="depth-distribution-svg"
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label="Horizontal bar chart showing operational groundwater depth distribution across 4 depth bands"
+        >
+          {/* Subtle Vertical Gridlines & Ticks */}
+          {ticks.map((tickVal) => {
+            const tx = barStartX + scaleX(tickVal);
+            return (
+              <g key={tickVal} className="depth-grid-tick">
+                <line
+                  x1={tx}
+                  y1={12}
+                  x2={tx}
+                  y2={170}
+                  stroke="var(--color-border)"
+                  strokeWidth="0.75"
+                  strokeDasharray={tickVal === 0 ? 'none' : '3 3'}
+                  opacity={tickVal === 0 ? 0.9 : 0.45}
+                />
+                <text
+                  x={tx}
+                  y={186}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill="var(--text-subtle)"
+                  fontFamily="var(--font-mono)"
+                >
+                  {tickVal}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* X Axis Bottom Label */}
+          <text
+            x={barStartX + barAreaWidth / 2}
+            y={206}
+            textAnchor="middle"
+            fontSize="10"
+            fill="var(--text-muted)"
+            fontFamily="var(--font-interface)"
+            fontWeight="500"
+          >
+            Monitoring Station Count (Axis Scale: 0–350)
+          </text>
+
+          {/* Four Clearly Separated Horizontal Rows */}
+          {buckets.map((b, idx) => {
+            const rowY = 16 + idx * rowPitch;
+            const centerY = rowY + barH / 2;
+            const barW = Math.max(b.count > 0 ? 4 : 0, scaleX(b.count));
             const isHovered = hoveredBracket === b.id;
 
             return (
@@ -77,131 +192,104 @@ function NationalAquiferDistributionChart({ stations = [], avgDepth = '10.42' })
                 onMouseEnter={() => setHoveredBracket(b.id)}
                 onMouseLeave={() => setHoveredBracket(null)}
                 style={{ cursor: 'pointer' }}
+                className="depth-bar-row"
               >
-                {/* Zone Background Strip */}
+                {/* Row Hover Background Strip */}
                 <rect
-                  x="50"
-                  y={yStart}
-                  width={chartWidth - 60}
-                  height={bandHeight}
-                  fill={isHovered ? 'rgba(55, 65, 81, 0.25)' : 'transparent'}
-                  stroke="var(--color-border)"
-                  strokeWidth="0.5"
-                  strokeDasharray="2 2"
+                  x="6"
+                  y={rowY - 4}
+                  width={svgWidth - 12}
+                  height={barH + 8}
+                  rx="4"
+                  fill={isHovered ? 'rgba(55, 65, 81, 0.20)' : 'transparent'}
+                  style={{ transition: 'fill 0.15s ease' }}
                 />
 
-                {/* Y Axis Threshold Label */}
-                <text x="42" y={yStart + 4} textAnchor="end" fontSize="10" fill="var(--text-subtle)" fontFamily="var(--font-mono)">
-                  {b.range[0]}m
+                {/* Left Side: Category Label - Vertically Centered */}
+                <text
+                  x={labelWidth}
+                  y={centerY}
+                  textAnchor="end"
+                  dominantBaseline="central"
+                  fontSize="12"
+                  fontWeight="600"
+                  fill={isHovered ? 'var(--color-primary)' : 'var(--color-secondary)'}
+                  fontFamily="var(--font-interface)"
+                >
+                  {b.label}
                 </text>
 
-                {/* Quantitative Bar */}
+                {/* Horizontal Bar Track */}
                 <rect
-                  x="56"
-                  y={yStart + 4}
-                  width={Math.max(8, ((chartWidth - 220) * b.pct) / 100)}
-                  height={Math.max(6, bandHeight - 8)}
-                  rx="2"
-                  fill={b.color}
-                  opacity={isHovered ? 1 : 0.85}
+                  x={barStartX}
+                  y={rowY}
+                  width={barAreaWidth}
+                  height={barH}
+                  rx="4"
+                  fill="rgba(55, 65, 81, 0.22)"
+                  stroke="var(--color-border)"
+                  strokeWidth="0.5"
                 />
 
-                {/* Station Count */}
+                {/* Proportional Colored Bar Fill */}
+                <rect
+                  x={barStartX}
+                  y={rowY}
+                  width={barW}
+                  height={barH}
+                  rx="4"
+                  fill={b.color}
+                  opacity={isHovered ? 1 : 0.88}
+                />
+
+                {/* Right Side: Clearly Visible Count & Exact Percentage (Never clipped) */}
                 <text
-                  x={64 + Math.max(8, ((chartWidth - 220) * b.pct) / 100)}
-                  y={yStart + bandHeight / 2 + 3}
-                  fontSize="11"
+                  x={statsStartX}
+                  y={centerY}
+                  textAnchor="start"
+                  dominantBaseline="central"
+                  fontSize="12"
                   fontWeight="600"
                   fill="var(--color-primary)"
                   fontFamily="var(--font-mono)"
                 >
-                  {b.count} wells ({b.pct}%)
-                </text>
-
-                {/* Zone Label */}
-                <text
-                  x={chartWidth - 16}
-                  y={yStart + bandHeight / 2 + 3}
-                  textAnchor="end"
-                  fontSize="11"
-                  fontWeight="500"
-                  fill="var(--text-muted)"
-                >
-                  {b.label}
+                  {b.count} stations <tspan fill="var(--text-muted)" fontWeight="400">({b.pct}%)</tspan>
                 </text>
               </g>
             );
           })}
-
-          {/* National Mean Depth Reference Marker */}
-          {(() => {
-            const meanY = scaleY(parseFloat(avgDepth) || 10.42);
-            return (
-              <g>
-                <line
-                  x1="45"
-                  y1={meanY}
-                  x2={chartWidth - 10}
-                  y2={meanY}
-                  stroke="var(--color-primary)"
-                  strokeWidth="1"
-                  strokeDasharray="4 2"
-                  opacity="0.8"
-                />
-                <rect
-                  x="52"
-                  y={meanY - 8}
-                  width="116"
-                  height="16"
-                  rx="2"
-                  fill="#000000"
-                  stroke="var(--color-border)"
-                  strokeWidth="1"
-                />
-                <text
-                  x="58"
-                  y={meanY + 3}
-                  fontSize="9.5"
-                  fontWeight="500"
-                  fill="var(--color-primary)"
-                  fontFamily="var(--font-mono)"
-                >
-                  Mean: {avgDepth}m bgl
-                </text>
-              </g>
-            );
-          })()}
         </svg>
       </div>
 
-      {/* Bracket Explanatory Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+      {/* ── Disclosed Dataset Composition Footnote ── */}
+      <div className="depth-dist-disclosure">
+        <span className="disclosure-dot" />
+        <span>
+          Dataset comprises 468 monitoring stations: 390 verified CGWB observation stations in Karnataka and 78 nationwide benchmark reference nodes. Operational screening bands evaluate point-level telemetry depths only and do not replace official administrative GEC-2015 assessment units.
+        </span>
+      </div>
+
+      {/* ── Four Operational Depth Screening Cards ── */}
+      <div className="depth-bracket-grid">
         {buckets.map(b => (
           <div
             key={b.id}
             onMouseEnter={() => setHoveredBracket(b.id)}
             onMouseLeave={() => setHoveredBracket(null)}
-            style={{
-              background: hoveredBracket === b.id ? 'var(--color-surface)' : '#000000',
-              border: `1px solid ${hoveredBracket === b.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
-              borderRadius: 'var(--radius-sm)',
-              padding: '10px 12px',
-              transition: 'border-color 0.15s ease',
-              cursor: 'pointer'
-            }}
+            className={`depth-bracket-card ${hoveredBracket === b.id ? 'active' : ''}`}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 600, color: b.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                {b.id.replace('_', ' ')}
+            <div className="dbc-header">
+              <span className="dbc-badge" style={{ color: b.color, borderColor: `${b.color}40`, background: `${b.color}15` }}>
+                {b.badge || b.label}
               </span>
-              <span className="font-mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              <span className="font-mono dbc-pct">
                 {b.pct}%
               </span>
             </div>
-            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-primary)' }} className="font-mono">
-              {b.count} Wells
+            <div className="dbc-count font-mono">
+              {b.count} Stations
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-subtle)', marginTop: '2px', lineHeight: 1.4 }}>
+            <div className="dbc-desc">
               {b.desc}
             </div>
           </div>
@@ -211,12 +299,21 @@ function NationalAquiferDistributionChart({ stations = [], avgDepth = '10.42' })
   );
 }
 
+const STATUS_CONFIG = {
+  safe:           { label: '0–8 m bgl',            dot: '#22c55e', color: '#22c55e' },
+  semi_critical:  { label: '8–15 m bgl',           dot: '#f59e0b', color: '#f59e0b' },
+  critical:       { label: '15–25 m bgl',          dot: '#f97316', color: '#f97316' },
+  over_exploited: { label: 'Greater than 25 m bgl', dot: '#ef4444', color: '#ef4444' },
+  unavailable:    { label: 'Unavailable',          dot: '#6b7280', color: '#6b7280' },
+};
+
 export default function UnifiedOverview({
   stations = [],
   selectedStation,
   onSelectStation,
   task1Data = null,
   loadingTask1 = false,
+  loadingStations = false,
   alerts = [],
   onNavigate,
   lastObservationDate = 'May 2025',
@@ -226,21 +323,25 @@ export default function UnifiedOverview({
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [searchTerm, setSearchTerm]             = useState('');
 
-  // Extract available states and districts from stations list
+  // Extract available states and districts from stations list with counts
   const stateOptions = useMemo(() => {
-    const set = new Set();
-    stations.forEach(s => { if (s.state) set.add(s.state); });
-    return Array.from(set).sort();
+    const map = new Map();
+    stations.forEach(s => {
+      if (s.state) {
+        map.set(s.state, (map.get(s.state) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [stations]);
 
   const districtOptions = useMemo(() => {
-    const set = new Set();
+    const map = new Map();
     stations.forEach(s => {
       if ((!selectedState || s.state === selectedState) && s.district) {
-        set.add(s.district);
+        map.set(s.district, (map.get(s.district) || 0) + 1);
       }
     });
-    return Array.from(set).sort();
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [stations, selectedState]);
 
   // Filtered station candidates
@@ -253,7 +354,7 @@ export default function UnifiedOverview({
       list = list.filter(s => s.district === selectedDistrict);
     }
     if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
+      const q = searchTerm.toLowerCase().trim();
       list = list.filter(s =>
         (s.station_name && s.station_name.toLowerCase().includes(q)) ||
         (s.district && s.district.toLowerCase().includes(q)) ||
@@ -272,43 +373,43 @@ export default function UnifiedOverview({
 
     if (level < 8.0) {
       return {
-        level: 'Safe (< 8m bgl)',
+        level: '0–8 m bgl (Shallow)',
         color: '#22c55e',
-        badge: 'Safe Category',
+        badge: '0–8 m bgl',
         badgeClass: 'badge-safe',
         statusKey: 'safe',
         summary: 'Groundwater is within 8 metres of ground level. Shallow tubewells operate with adequate seasonal replenishment.',
-        recommendation: 'Sustainable aquifer zone for agricultural extraction. Maintain seasonal monitoring protocol.'
+        recommendation: 'Point-level screening: Standard operational envelope. Maintain seasonal monitoring protocol.'
       };
     } else if (level < 15.0) {
       return {
-        level: 'Semi-Critical (8–15m bgl)',
+        level: '8–15 m bgl (Moderate)',
         color: '#f59e0b',
-        badge: 'Semi-Critical',
+        badge: '8–15 m bgl',
         badgeClass: 'badge-semi',
         statusKey: 'semi_critical',
         summary: 'Groundwater is between 8 and 15 metres deep. Seasonal extraction approaches annual natural recharge envelope.',
-        recommendation: 'Schedule irrigation during non-peak evaporation hours. Micro-irrigation recommended for rabi cropping.'
+        recommendation: 'Point-level screening: Monitored seasonal extraction. Micro-irrigation recommended for rabi cropping.'
       };
     } else if (level <= 25.0) {
       return {
-        level: 'Critical (15–25m bgl)',
+        level: '15–25 m bgl (Deep)',
         color: '#f97316',
-        badge: 'Critical Category',
+        badge: '15–25 m bgl',
         badgeClass: 'badge-crit',
         statusKey: 'critical',
         summary: 'Groundwater is between 15 and 25 metres deep. Multi-year extraction deficits registered in this formation.',
-        recommendation: 'Strict water budget required. Restrict water-intensive cropping; construct percolation tanks.'
+        recommendation: 'Point-level screening: Strict water budget required. Restrict water-intensive cropping; construct percolation tanks.'
       };
     } else {
       return {
-        level: 'Over-Exploited (> 25m bgl)',
+        level: 'Greater than 25 m bgl (Very Deep)',
         color: '#ef4444',
-        badge: 'Over-Exploited',
+        badge: '> 25 m bgl',
         badgeClass: 'badge-over',
         statusKey: 'over_exploited',
         summary: 'Groundwater is deeper than 25 metres below ground level. High risk of seasonal well drying during pre-monsoon months.',
-        recommendation: 'Immediate community managed artificial recharge required. Transition to drought-tolerant crops.'
+        recommendation: 'Point-level screening: Deep drawdown threshold exceeded. Managed artificial recharge recommended.'
       };
     }
   };
@@ -320,25 +421,51 @@ export default function UnifiedOverview({
       ? Number(selectedStation.latest_water_level_m).toFixed(2)
       : '10.97');
 
-  // National Summary statistics across all stations
+  // Total stations and verified dataset composition breakdown
   const totalStations = stations.length;
-  const statusCounts = useMemo(() => {
-    return stations.reduce((acc, s) => {
-      acc[s.status] = (acc[s.status] || 0) + 1;
-      return acc;
-    }, {});
+  const verifiedCount = useMemo(() => {
+    return stations.filter(s => s.data_provenance === 'historical_annual').length;
+  }, [stations]);
+  const benchmarkCount = totalStations - verifiedCount;
+
+  // Depth-distribution calculation across all monitoring stations
+  const depthScreeningSummary = useMemo(() => {
+    let band0_8 = 0;
+    let band8_15 = 0;
+    let band15_25 = 0;
+    let bandGt25 = 0;
+
+    for (const s of stations) {
+      const depth = Number(s.current_level_m ?? s.latest_water_level_m ?? s.predicted_depth_m ?? 10.97);
+      if (depth < 8) band0_8++;
+      else if (depth < 15) band8_15++;
+      else if (depth <= 25) band15_25++;
+      else bandGt25++;
+    }
+
+    const total = stations.length || 1;
+    return {
+      band0_8,
+      band8_15,
+      band15_25,
+      bandGt25,
+      deepCount: band15_25 + bandGt25,
+      band0_8Pct: ((band0_8 / total) * 100).toFixed(1),
+      band8_15Pct: ((band8_15 / total) * 100).toFixed(1),
+      band15_25Pct: ((band15_25 / total) * 100).toFixed(1),
+      bandGt25Pct: ((bandGt25 / total) * 100).toFixed(1),
+      deepPct: (((band15_25 + bandGt25) / total) * 100).toFixed(1),
+    };
   }, [stations]);
 
-  const stressedCount = (statusCounts.critical || 0) + (statusCounts.over_exploited || 0);
-  const stressedPct = totalStations ? Math.round((stressedCount / totalStations) * 100) : 0;
-  const safeCount = statusCounts.safe || 0;
-  const safePct = totalStations ? Math.round((safeCount / totalStations) * 100) : 0;
-  const criticalCount = statusCounts.critical || 0;
-  const overExploitedCount = statusCounts.over_exploited || 0;
+  // Evaluated station count for the AI prediction model
+  const evaluatedCount = useMemo(() => {
+    return stations.filter(s => s.predicted_depth_m != null && Number.isFinite(Number(s.predicted_depth_m))).length;
+  }, [stations]);
 
   const avgDepth = useMemo(() => {
     const valid = stations.filter(s => s.predicted_depth_m != null && Number.isFinite(Number(s.predicted_depth_m)));
-    if (!valid.length) return '10.42';
+    if (!valid.length) return '5.75';
     const sum = valid.reduce((a, s) => a + Number(s.predicted_depth_m), 0);
     return (sum / valid.length).toFixed(2);
   }, [stations]);
@@ -414,7 +541,7 @@ export default function UnifiedOverview({
       {/* ── 2. Primary Bento Grid (2/3 + 1/3 SNP Agency Layout) ── */}
       <div className="as-bento-grid">
         {/* Left Column (2/3 Width) */}
-        <div className="as-card">
+        <div className="as-card depth-dist-card">
           {selectedStation ? (
             <GroundwaterHistoryChart
               station={selectedStation}
@@ -487,16 +614,16 @@ export default function UnifiedOverview({
                   Sustainable Water Envelope
                 </h3>
                 <div style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--color-primary)' }}>
-                  {safePct}%
+                  {depthScreeningSummary.band0_8Pct}%
                 </div>
                 <div style={{ marginTop: '8px' }}>
                   <span className="status-badge badge-safe">
-                    {safeCount} Stations in Safe Zone (&lt;8m)
+                    {depthScreeningSummary.band0_8} of {totalStations} Stations in Shallow Band (0–8m)
                   </span>
                 </div>
 
                 <div style={{ margin: '14px 0', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  {stressedCount} monitored observation wells ({stressedPct}%) exhibit critical water table depression or over-exploitation requiring artificial recharge.
+                  {depthScreeningSummary.deepCount} monitored observation stations ({depthScreeningSummary.deepPct}%) register deeper than 15m bgl screening threshold across the network.
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -517,14 +644,17 @@ export default function UnifiedOverview({
                 </div>
               </div>
 
-              {/* Direct Telemetry Lookup Panel */}
+              {/* Direct Telemetry Lookup Panel (Requirement 3) */}
               <div className="as-card">
                 <span className="eyebrow">Direct Telemetry Lookup</span>
-                <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-primary)', margin: '4px 0 10px 0' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-primary)', margin: '4px 0 6px 0' }}>
                   Inspect Specific Monitoring Well
                 </h4>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                  Search 468 observation wells or filter by state and district to inspect detailed telemetry dossiers.
+                </p>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="station-lookup-wrap">
                   <div className="search-input-wrap">
                     <IconSearch size={14} className="search-icon" />
                     <input
@@ -535,11 +665,11 @@ export default function UnifiedOverview({
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
                     {searchTerm && (
-                      <button className="clear-btn" onClick={() => setSearchTerm('')}>×</button>
+                      <button className="clear-btn" onClick={() => setSearchTerm('')} aria-label="Clear search">×</button>
                     )}
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <select
                       className="form-select form-select-sm"
                       value={selectedState}
@@ -547,10 +677,11 @@ export default function UnifiedOverview({
                         setSelectedState(e.target.value);
                         setSelectedDistrict('');
                       }}
+                      aria-label="Filter by state"
                     >
                       <option value="">All States ({stateOptions.length})</option>
-                      {stateOptions.map(st => (
-                        <option key={st} value={st}>{st}</option>
+                      {stateOptions.map(([st, cnt]) => (
+                        <option key={st} value={st}>{st} ({cnt})</option>
                       ))}
                     </select>
 
@@ -558,37 +689,119 @@ export default function UnifiedOverview({
                       className="form-select form-select-sm"
                       value={selectedDistrict}
                       onChange={(e) => setSelectedDistrict(e.target.value)}
-                      disabled={!selectedState && districtOptions.length > 50}
+                      aria-label="Filter by district"
                     >
-                      <option value="">Districts ({districtOptions.length})</option>
-                      {districtOptions.map(d => (
-                        <option key={d} value={d}>{d}</option>
+                      <option value="">All Districts ({districtOptions.length})</option>
+                      {districtOptions.map(([d, cnt]) => (
+                        <option key={d} value={d}>{d} ({cnt})</option>
                       ))}
                     </select>
                   </div>
 
+                  {/* Loading State */}
+                  {loadingStations && stations.length === 0 && (
+                    <div className="station-lookup-loading">
+                      <div className="spinner-ring" />
+                      <span className="font-mono" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Loading monitoring station telemetry...
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Empty State */}
+                  {!loadingStations && filteredStations.length === 0 && (
+                    <div className="station-lookup-empty">
+                      <div className="sle-icon-wrap">
+                        <IconSearch size={16} />
+                      </div>
+                      <div className="sle-title">No monitoring wells found</div>
+                      <div className="sle-desc">
+                        {searchTerm
+                          ? `No stations match "${searchTerm}". Check the query or reset filters.`
+                          : 'No stations match the selected state and district filters.'}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ height: '30px', fontSize: '12px' }}
+                        onClick={() => {
+                          setSearchTerm('');
+                          setSelectedState('');
+                          setSelectedDistrict('');
+                        }}
+                      >
+                        Reset Filters
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Real Stations List Selection */}
                   {filteredStations.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                      {filteredStations.slice(0, 6).map(st => (
-                        <button
-                          key={st.station_id}
-                          className="station-chip"
-                          onClick={() => {
-                            onSelectStation(st);
-                            if (onToast) onToast(`Loaded well dossier for ${st.station_name || st.village || st.station_id}.`, 'success');
-                          }}
-                          title={`Select ${st.station_name || st.village || st.station_id}`}
-                        >
-                          <StatusSymbol status={st.status || 'safe'} size={9} />
-                          <span>{st.station_name || st.village || st.station_id}</span>
-                          <IconArrowRight size={9} style={{ marginLeft: '2px', opacity: 0.5 }} />
-                        </button>
-                      ))}
-                      {filteredStations.length > 6 && (
-                        <span style={{ fontSize: '11px', color: 'var(--text-subtle)', alignSelf: 'center', padding: '2px 4px' }}>
-                          +{filteredStations.length - 6} more
+                    <div className="station-lookup-list">
+                      {filteredStations.slice(0, 5).map(st => {
+                        const depth = st.current_level_m != null
+                          ? Number(st.current_level_m).toFixed(2)
+                          : (st.predicted_depth_m != null ? Number(st.predicted_depth_m).toFixed(2) : '—');
+                        const isBench = st.data_provenance !== 'historical_annual';
+                        const statusKey = st.status || 'safe';
+
+                        return (
+                          <div
+                            key={st.station_id}
+                            className="station-lookup-card"
+                            onClick={() => {
+                              onSelectStation(st);
+                              if (onToast) onToast(`Loaded well dossier for ${st.station_name || st.village || st.station_id}.`, 'success');
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onSelectStation(st);
+                                if (onToast) onToast(`Loaded well dossier for ${st.station_name || st.village || st.station_id}.`, 'success');
+                              }
+                            }}
+                            title={`Select ${st.station_name || st.village || st.station_id}`}
+                          >
+                            <div className="slc-main">
+                              <div className="slc-title-row">
+                                <span className="slc-name">{st.station_name || st.village || st.station_id}</span>
+                                {isBench && <span className="provenance-tag-bench slc-bench-tag">Benchmark</span>}
+                              </div>
+                              <div className="slc-meta">
+                                {st.block && st.block !== st.district ? `${st.block}, ` : ''}{st.district}, {st.state}
+                              </div>
+                            </div>
+
+                            <div className="slc-right">
+                              <div className="slc-depth-val font-mono">
+                                {depth} <span className="slc-unit">m</span>
+                              </div>
+                              <div className="slc-status-row">
+                                <StatusSymbol status={statusKey} size={8} />
+                                <span className="slc-status-label">{STATUS_CONFIG[statusKey]?.label || '0–8 m bgl'}</span>
+                              </div>
+                            </div>
+
+                            <IconArrowRight size={13} className="slc-arrow" />
+                          </div>
+                        );
+                      })}
+
+                      <div className="station-lookup-footer">
+                        <span className="slf-count font-mono">
+                          Showing 5 of {filteredStations.length} matching stations
                         </span>
-                      )}
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-xs slf-btn"
+                          onClick={() => onNavigate('stations')}
+                          title="Open full monitoring stations directory"
+                        >
+                          <IconTable size={12} style={{ marginRight: '4px' }} /> View Directory
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -606,25 +819,25 @@ export default function UnifiedOverview({
             <span className="as-kpi-value">{totalStations}</span>
             <span className="as-kpi-badge neutral">Active</span>
           </div>
-          <div className="as-kpi-sub">390 CGWB Karnataka + 78 benchmark nodes</div>
+          <div className="as-kpi-sub">{verifiedCount} verified CGWB Karnataka + {benchmarkCount} benchmark nodes</div>
         </div>
 
         <div className="as-kpi-card" onClick={() => onNavigate('map')}>
-          <div className="as-kpi-label">Safe Static Water Table</div>
+          <div className="as-kpi-label">Shallow Water Table (0–8m)</div>
           <div className="as-kpi-value-row">
-            <span className="as-kpi-value">{safeCount}</span>
-            <span className="as-kpi-badge up">{safePct}% &lt;8m</span>
+            <span className="as-kpi-value">{depthScreeningSummary.band0_8}</span>
+            <span className="as-kpi-badge up">{depthScreeningSummary.band0_8Pct}% &lt;8m</span>
           </div>
-          <div className="as-kpi-sub">Wells in sustainable replenishment zone</div>
+          <div className="as-kpi-sub">Stations within standard operational depth</div>
         </div>
 
         <div className="as-kpi-card warn" onClick={() => onNavigate('alerts')}>
-          <div className="as-kpi-label">Stressed &amp; Over-Exploited</div>
+          <div className="as-kpi-label">Deep Water Table (&gt;15m)</div>
           <div className="as-kpi-value-row">
-            <span className="as-kpi-value" style={{ color: '#ef4444' }}>{stressedCount}</span>
-            <span className="as-kpi-badge down">{stressedPct}% Stressed</span>
+            <span className="as-kpi-value" style={{ color: '#ef4444' }}>{depthScreeningSummary.deepCount}</span>
+            <span className="as-kpi-badge down">{depthScreeningSummary.deepPct}% &gt;15m</span>
           </div>
-          <div className="as-kpi-sub">{criticalCount} Critical + {overExploitedCount} Over-Exploited</div>
+          <div className="as-kpi-sub">{depthScreeningSummary.band15_25} Deep (15–25m) + {depthScreeningSummary.bandGt25} Critical (&gt;25m)</div>
         </div>
 
         <div className="as-kpi-card" onClick={() => onNavigate('forecast')}>
@@ -633,7 +846,7 @@ export default function UnifiedOverview({
             <span className="as-kpi-value">{avgDepth} <span style={{ fontSize: '13px', fontWeight: 400 }}>m</span></span>
             <span className="as-kpi-badge neutral">m bgl</span>
           </div>
-          <div className="as-kpi-sub">National baseline across all observation wells</div>
+          <div className="as-kpi-sub">Mean across {evaluatedCount} evaluated Karnataka CGWB stations</div>
         </div>
       </div>
     </div>

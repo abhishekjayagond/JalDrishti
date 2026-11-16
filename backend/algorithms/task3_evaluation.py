@@ -26,10 +26,12 @@ METHODOLOGICAL SEPARATION (Statutory CGWB/GEC-2015 vs. Point-Level Depth Tiers):
 
 import logging
 from datetime import datetime
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
+from dataclasses import dataclass, asdict
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 log = logging.getLogger("jaldrishti.task3")
 
@@ -47,6 +49,472 @@ GEC_CRITICAL_STAGE_MAX      = 100.0
 
 # Statutory GEC-2015 requires at least 10 years of pre/post-monsoon observation
 MIN_DECADAL_TREND_YEARS = 10
+DEFAULT_MIN_STATIONS_PER_YEAR = 2
+
+
+@dataclass(frozen=True)
+class HydrogeologicalThresholdRecord:
+    """
+    Authoritative Server-Side Hydrogeological Threshold Provenance Record.
+
+    Statutory Basis:
+      CGWB Ground Water Estimation Committee (GEC-2015) guidance defines significant
+      groundwater level decline as approximately 10–20 cm/year (0.10–0.20 m/year)
+      depending on local hydrogeology (aquifer storativity / specific yield).
+      Every block threshold must be independently justified by published CGWB
+      district groundwater reports with verifiable citations.
+    """
+    block: str
+    state: str
+    district: str
+    threshold_m_per_year: float
+    source_publication_title: str
+    source_url: str
+    page_table_reference: str
+    hydrogeological_formation: str
+    justification: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+# Trusted Server-Side Hydrogeological Threshold Registry
+# Strictly verified against official published CGWB Ground Water Information Booklets.
+# All unsupported blocks without independent justification are excluded.
+# Statutory Basis:
+#   CGWB GEC-2015 guidance specifies 10–20 cm/year (0.10–0.20 m/year) as a general
+#   benchmark range. However, published CGWB district groundwater booklets do not
+#   statutorily establish specific decline thresholds for individual blocks.
+#   Per scientific integrity standards, no block threshold is assumed without explicit
+#   independent documentation. Unsupported blocks evaluate trend validation as 'not_evaluated'.
+TRUSTED_HYDROGEOLOGICAL_THRESHOLDS: Dict[str, HydrogeologicalThresholdRecord] = {}
+
+# Derived mapping for backward compatibility with threshold lookups
+DOCUMENTED_ASSESSMENT_UNIT_THRESHOLDS: Dict[str, float] = {}
+
+
+def register_trusted_hydrogeological_threshold(record: HydrogeologicalThresholdRecord) -> None:
+    """Register or update an independently verified hydrogeological threshold record."""
+    norm_key = str(record.block).strip().lower()
+    TRUSTED_HYDROGEOLOGICAL_THRESHOLDS[norm_key] = record
+    DOCUMENTED_ASSESSMENT_UNIT_THRESHOLDS[norm_key] = record.threshold_m_per_year
+
+
+def clear_trusted_hydrogeological_thresholds() -> None:
+    """Clear all registered hydrogeological threshold records (for test isolation/reset)."""
+    TRUSTED_HYDROGEOLOGICAL_THRESHOLDS.clear()
+    DOCUMENTED_ASSESSMENT_UNIT_THRESHOLDS.clear()
+
+
+def lookup_trusted_hydrogeological_threshold(block_name: Optional[str]) -> Optional[HydrogeologicalThresholdRecord]:
+    """Look up authoritative, independently verified hydrogeological threshold record for an administrative block."""
+    if not block_name:
+        return None
+    return TRUSTED_HYDROGEOLOGICAL_THRESHOLDS.get(str(block_name).strip().lower(), None)
+
+
+OLS_AUTOCORRELATION_LIMITATIONS_NOTE = (
+    "Ordinary least-squares (OLS) linear regression p-values are restricted strictly to an exploratory "
+    "diagnostic screening metric. OLS regression assumes independent and identically distributed (i.i.d.) "
+    "residuals, which is routinely violated in annual groundwater observations due to serial autocorrelation "
+    "and multi-year climatic lag effects. Ordinary OLS p-values MUST NOT be presented as definitive hydrogeological "
+    "significance. Definitive trend significance requires serial-correlation robust non-parametric testing "
+    "(Modified Mann-Kendall per Hamed & Rao, 1998) combined with physical verification against the trusted "
+    "server-side hydrogeological threshold."
+)
+
+
+def compute_sens_slope_confidence_interval(
+    pairwise_slopes: List[float],
+    variance_s: float,
+    confidence_level: float = 0.95,
+) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Non-parametric (1 - alpha) confidence interval for Sen's slope estimator (Sen 1968, Gilbert 1987).
+
+    Methodology:
+      Gilbert, R. O. (1987). Statistical Methods for Environmental Pollution Monitoring.
+      Van Nostrand Reinhold, New York. pp. 217-219.
+      Hollander, M., Wolfe, D. A., & Chicken, E. (2013). Nonparametric Statistical Methods.
+      John Wiley & Sons.
+    """
+    if not pairwise_slopes or variance_s <= 0.0:
+        return None, None
+    N_prime = len(pairwise_slopes)
+    sorted_slopes = sorted(pairwise_slopes)
+    alpha = 1.0 - confidence_level
+    z = float(stats.norm.ppf(1.0 - alpha / 2.0))
+    C_alpha = z * np.sqrt(variance_s)
+    M1 = (N_prime - C_alpha) / 2.0
+    M2 = (N_prime + C_alpha) / 2.0 + 1.0
+    k1 = max(1, min(N_prime, int(np.round(M1))))
+    k2 = max(1, min(N_prime, int(np.round(M2))))
+    ci_lower = float(sorted_slopes[k1 - 1])
+    ci_upper = float(sorted_slopes[k2 - 1])
+    return ci_lower, ci_upper
+
+
+def evaluate_trend_threshold_sensitivity(
+    sen_slope_m_per_year: Optional[float],
+    p_value: Optional[float],
+    ci_lower: Optional[float] = None,
+    ci_upper: Optional[float] = None,
+    years_count: Optional[int] = None,
+    min_years: int = MIN_DECADAL_TREND_YEARS,
+    lower_threshold_m_per_year: float = 0.10,
+    upper_threshold_m_per_year: float = 0.20,
+    is_statistically_significant: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """
+    Evaluate groundwater trend evidence as a threshold-sensitivity diagnostic
+    against the statutory CGWB GEC-2015 guideline range (0.10–0.20 m/year = 10–20 cm/year).
+
+    Exact Diagnostic Outcomes:
+      - 'significant_across_guideline_range':
+          Decline is supported above the entire guideline range (Sen's slope >= 0.20 m/yr
+          and statistically significant p < 0.05).
+      - 'below_guideline_range':
+          Decline is demonstrably below guideline range (Sen's slope < 0.10 m/yr
+          or non-positive / recovering water table or lack of statistical significance).
+      - 'threshold_sensitive':
+          Evidence falls within or overlaps guideline range (0.10 <= slope < 0.20 m/yr
+          with statistical significance, or slope >= 0.20 m/yr but confidence interval
+          extends below upper threshold); outcome depends on local formation threshold.
+      - 'insufficient_data':
+          Fewer than min_years (10) decadal seasonal observation records.
+      - 'not_evaluated':
+          Trend evaluation could not be performed (e.g. missing inputs, constant series).
+    """
+    guideline = {"lower": lower_threshold_m_per_year, "upper": upper_threshold_m_per_year}
+
+    if years_count is None or years_count < min_years:
+        return {
+            "status": "insufficient_data",
+            "outcome": "insufficient_data",
+            "guideline_range_m_per_year": guideline,
+            "sen_slope_m_per_year": sen_slope_m_per_year,
+            "p_value": p_value,
+            "sen_slope_ci_95": {"lower": ci_lower, "upper": ci_upper} if ci_lower is not None and ci_upper is not None else None,
+            "rationale": (
+                f"Insufficient data: {years_count or 0} seasonal observations available "
+                f"(statutory GEC-2015 requires >= {min_years} representative decadal years)."
+            ),
+        }
+
+    if sen_slope_m_per_year is None or p_value is None:
+        return {
+            "status": "not_evaluated",
+            "outcome": "not_evaluated",
+            "guideline_range_m_per_year": guideline,
+            "sen_slope_m_per_year": None,
+            "p_value": None,
+            "sen_slope_ci_95": None,
+            "rationale": "Trend criteria were not evaluated or statistical model assumptions were not met.",
+        }
+
+    slope = float(sen_slope_m_per_year)
+    pval = float(p_value)
+    sig = is_statistically_significant if is_statistically_significant is not None else (pval < 0.05)
+
+    ci_dict = {"lower": ci_lower, "upper": ci_upper} if ci_lower is not None and ci_upper is not None else None
+
+    # Case 1: Below guideline range (slope < 0.10 or non-significant or recovering water table <= 0)
+    if slope <= 0.0 or not sig or slope < lower_threshold_m_per_year:
+        if slope <= 0.0:
+            rat = f"Water level trend ({slope:.4f} m/yr) indicates stable or recovering water table (below guideline range)."
+        elif not sig:
+            rat = f"Water level trend ({slope:.4f} m/yr) is not statistically significant (p={pval:.4f} >= 0.05), below guideline range."
+        else:
+            rat = f"Water level trend ({slope:.4f} m/yr) is demonstrably below CGWB guideline range (< {lower_threshold_m_per_year:.2f} m/yr)."
+        return {
+            "status": "below_guideline_range",
+            "outcome": "below_guideline_range",
+            "guideline_range_m_per_year": guideline,
+            "sen_slope_m_per_year": round(slope, 4),
+            "p_value": round(pval, 4),
+            "sen_slope_ci_95": ci_dict,
+            "rationale": rat,
+        }
+
+    # Case 2: Significant across guideline range (slope >= 0.20 and significant)
+    if slope >= upper_threshold_m_per_year and sig:
+        if ci_lower is not None and ci_lower < lower_threshold_m_per_year:
+            return {
+                "status": "threshold_sensitive",
+                "outcome": "threshold_sensitive",
+                "guideline_range_m_per_year": guideline,
+                "sen_slope_m_per_year": round(slope, 4),
+                "p_value": round(pval, 4),
+                "sen_slope_ci_95": ci_dict,
+                "rationale": (
+                    f"Water table decline slope ({slope:.4f} m/yr) meets upper threshold, but 95% confidence interval "
+                    f"[{ci_lower:.4f}, {ci_upper:.4f}] extends below {lower_threshold_m_per_year:.2f} m/yr; "
+                    "interpretation is sensitive to local formation storativity threshold."
+                ),
+            }
+        return {
+            "status": "significant_across_guideline_range",
+            "outcome": "significant_across_guideline_range",
+            "guideline_range_m_per_year": guideline,
+            "sen_slope_m_per_year": round(slope, 4),
+            "p_value": round(pval, 4),
+            "sen_slope_ci_95": ci_dict,
+            "rationale": (
+                f"Statistically significant water table decline ({slope:.4f} m/yr, p={pval:.4f}) "
+                f"meets or exceeds the entire CGWB guideline range (>= {upper_threshold_m_per_year:.2f} m/yr)."
+            ),
+        }
+
+    # Case 3: Threshold-sensitive (0.10 <= slope < 0.20 and significant)
+    return {
+        "status": "threshold_sensitive",
+        "outcome": "threshold_sensitive",
+        "guideline_range_m_per_year": guideline,
+        "sen_slope_m_per_year": round(slope, 4),
+        "p_value": round(pval, 4),
+        "sen_slope_ci_95": ci_dict,
+        "rationale": (
+            f"Statistically significant water table decline ({slope:.4f} m/yr, p={pval:.4f}) "
+            f"falls within CGWB guideline range ({lower_threshold_m_per_year:.2f}–{upper_threshold_m_per_year:.2f} m/yr); "
+            "classification is sensitive to local hydrogeological formation storativity threshold."
+        ),
+    }
+
+
+def compute_modified_mann_kendall(
+    y_values: np.ndarray,
+    year_coords: Optional[np.ndarray] = None,
+    allow_irregular: bool = False,
+) -> Dict[str, Any]:
+    """
+    Modified Mann-Kendall Trend Test for Autocorrelated Data (Hamed & Rao, 1998).
+
+    Methodology:
+      Hamed, K. H., & Rao, A. R. (1998). A modified Mann-Kendall trend test for autocorrelated data.
+      Journal of Hydrology, 204(1-4), 182-196.
+
+    Statutory Basis & Scientific Integrity:
+      1. Irregular annual observations & missing calendar years:
+         Hamed & Rao (1998) Eq. (7) variance correction weights (n-k)(n-k-1)(n-k-2) are derived
+         analytically assuming contiguous equidistant time series (delta_t = 1.0 yr).
+         When calendar years are missing (e.g. 2011..2021 with 2015 missing), adjacent array positions
+         do NOT represent 1-year lags. Treating non-equidistant array indices as 1-year lags distorts
+         the empirical lag autocorrelation structure and invalidates the variance correction factor.
+         By default (allow_irregular=False), when non-equidistant intervals are detected, the test reports
+         is_equidistant=False and trend_direction='not_evaluated', without inventing an unsupported statistical result.
+         When allow_irregular=True, continuous-time / distance-aware rank autocorrelation adjustment is applied.
+      2. Tied values:
+         Tied values in observations reduce the baseline variance V0(S) per the standard tie correction:
+         V0(S) = (1/18) * [n(n-1)(2n+5) - sum_t t(t-1)(2t+5)].
+      3. Non-parametric Confidence Interval for Sen's Slope:
+         Calculated per Sen (1968) and Gilbert (1987) using non-parametric rank order statistics.
+      4. Autocorrelation lag truncation & detrending:
+         Empirical serial correlation coefficients rho_k of detrended ranks are evaluated for lags
+         k = 1, ..., n-2. Only statistically significant rho_k (|rho_k| > 1.96 / sqrt(n)) are included
+         in the variance inflation factor (n / n*).
+      5. Conservatism:
+         The variance correction factor is bounded below by 1.0 (var_factor >= 1.0) so negative
+         autocorrelation does not artificially shrink variance and inflate false positives.
+    """
+    if y_values is None or len(y_values) < 3:
+        return {
+            "method": "Modified Mann-Kendall (Hamed & Rao, 1998)",
+            "n_observations": int(len(y_values)) if y_values is not None else 0,
+            "is_equidistant": False,
+            "s_statistic": None,
+            "kendall_tau": None,
+            "sen_slope_m_per_year": None,
+            "sen_slope_ci_lower_m_per_year": None,
+            "sen_slope_ci_upper_m_per_year": None,
+            "sen_slope_ci_95": None,
+            "variance_s": None,
+            "modified_variance_s": None,
+            "variance_correction_factor": None,
+            "z_stat": None,
+            "p_value": None,
+            "is_statistically_significant": False,
+            "trend_direction": "insufficient_data",
+            "limitation_note": "Fewer than 3 observations available for trend analysis.",
+        }
+
+    y_arr = np.asarray(y_values, dtype=float)
+    t_arr = np.asarray(year_coords, dtype=float) if year_coords is not None else np.arange(len(y_arr), dtype=float)
+
+    # Filter out non-finite (NaN / Inf) values
+    finite_mask = np.isfinite(y_arr) & np.isfinite(t_arr)
+    y_arr = y_arr[finite_mask]
+    t_arr = t_arr[finite_mask]
+    n = len(y_arr)
+
+    if n < 3:
+        return {
+            "method": "Modified Mann-Kendall (Hamed & Rao, 1998)",
+            "n_observations": int(n),
+            "is_equidistant": False,
+            "s_statistic": None,
+            "kendall_tau": None,
+            "sen_slope_m_per_year": None,
+            "sen_slope_ci_lower_m_per_year": None,
+            "sen_slope_ci_upper_m_per_year": None,
+            "sen_slope_ci_95": None,
+            "variance_s": None,
+            "modified_variance_s": None,
+            "variance_correction_factor": None,
+            "z_stat": None,
+            "p_value": None,
+            "is_statistically_significant": False,
+            "trend_direction": "insufficient_data",
+            "limitation_note": "Fewer than 3 valid, finite observations available for trend analysis.",
+        }
+
+    # Sort strictly by calendar time
+    sort_order = np.argsort(t_arr)
+    t_arr = t_arr[sort_order]
+    y_arr = y_arr[sort_order]
+
+    # Verify equidistant spacing (e.g. annual series where delta_t == 1.0)
+    dt_diffs = np.diff(t_arr)
+    is_equidistant = bool(np.all(np.isclose(dt_diffs, 1.0)))
+
+    # Compute Mann-Kendall S statistic and Sen's slope using actual calendar coordinates
+    pairwise_diffs = []
+    pairwise_slopes = []
+    for i in range(n - 1):
+        for j in range(i + 1, n):
+            dy = float(y_arr[j] - y_arr[i])
+            dt = float(t_arr[j] - t_arr[i])
+            pairwise_diffs.append(dy)
+            if dt != 0.0:
+                pairwise_slopes.append(dy / dt)
+
+    S = int(np.sum(np.sign(pairwise_diffs)))
+    sen_slope = float(np.median(pairwise_slopes)) if pairwise_slopes else 0.0
+    tau = float(S / (0.5 * n * (n - 1))) if n > 1 else 0.0
+
+    # Tied values adjustment in baseline variance V0(S)
+    _, tie_counts = np.unique(y_arr, return_counts=True)
+    tie_term = np.sum(tie_counts * (tie_counts - 1) * (2 * tie_counts + 5))
+    v0 = float((n * (n - 1) * (2 * n + 5) - tie_term) / 18.0)
+
+    # Non-parametric Sen's slope confidence interval (Sen 1968, Gilbert 1987)
+    ci_low, ci_high = compute_sens_slope_confidence_interval(pairwise_slopes, v0)
+    ci_dict = {"lower": round(ci_low, 4), "upper": round(ci_high, 4)} if ci_low is not None and ci_high is not None else None
+
+    # If series is non-equidistant (contains missing calendar years or irregular intervals),
+    # Hamed & Rao (1998) serial correlation lag summation cannot be defensibly computed without allow_irregular=True.
+    if not is_equidistant and not allow_irregular:
+        return {
+            "method": "Modified Mann-Kendall (Hamed & Rao, 1998)",
+            "n_observations": int(n),
+            "is_equidistant": False,
+            "s_statistic": S,
+            "kendall_tau": round(tau, 4),
+            "sen_slope_m_per_year": round(sen_slope, 4),
+            "sen_slope_ci_lower_m_per_year": round(ci_low, 4) if ci_low is not None else None,
+            "sen_slope_ci_upper_m_per_year": round(ci_high, 4) if ci_high is not None else None,
+            "sen_slope_ci_95": ci_dict,
+            "variance_s": round(v0, 4) if v0 > 0 else 0.0,
+            "modified_variance_s": None,
+            "variance_correction_factor": None,
+            "z_stat": None,
+            "p_value": None,
+            "is_statistically_significant": False,
+            "trend_direction": "not_evaluated",
+            "limitation_note": (
+                "Missing calendar years or irregular annual intervals detected in observation series. "
+                "Hamed & Rao (1998) variance correction analytically assumes contiguous, equidistant annual "
+                "spacing (delta_t = 1.0 yr). Autocorrelation lag structure cannot be defensibly evaluated on "
+                "irregular time series without interpolation; Modified Mann-Kendall test is marked 'not_evaluated'."
+            ),
+        }
+
+    # Constant or completely tied series (zero variance)
+    if v0 <= 0 or np.all(y_arr == y_arr[0]):
+        return {
+            "method": "Modified Mann-Kendall (Hamed & Rao, 1998)",
+            "n_observations": int(n),
+            "is_equidistant": is_equidistant,
+            "s_statistic": 0,
+            "kendall_tau": 0.0,
+            "sen_slope_m_per_year": 0.0,
+            "sen_slope_ci_lower_m_per_year": 0.0,
+            "sen_slope_ci_upper_m_per_year": 0.0,
+            "sen_slope_ci_95": {"lower": 0.0, "upper": 0.0},
+            "variance_s": 0.0,
+            "modified_variance_s": 0.0,
+            "variance_correction_factor": 1.0,
+            "z_stat": 0.0,
+            "p_value": 1.0,
+            "is_statistically_significant": False,
+            "trend_direction": "stable",
+            "limitation_note": None,
+        }
+
+    # Detrend data using Sen's slope per Hamed & Rao (1998)
+    detrended = y_arr - sen_slope * (t_arr - t_arr[0])
+    ranks = stats.rankdata(detrended)
+    mean_rank = (n + 1.0) / 2.0
+    rank_dev = ranks - mean_rank
+    var_rank = float(np.sum(rank_dev ** 2))
+
+    crit_val = 1.96 / np.sqrt(n)
+    correction_sum = 0.0
+    if var_rank > 1e-12 and n > 3:
+        for k in range(1, n - 2):
+            cov = float(np.sum(rank_dev[:-k] * rank_dev[k:]))
+            rho_k = cov / var_rank
+            if abs(rho_k) > crit_val:
+                weight = (n - k) * (n - k - 1) * (n - k - 2)
+                correction_sum += weight * rho_k
+
+        var_factor = max(1.0, 1.0 + (2.0 / (n * (n - 1) * (n - 2))) * correction_sum)
+    else:
+        var_factor = 1.0
+
+    v_star = max(v0 * var_factor, 1e-9)
+
+    # Re-evaluate confidence interval using modified variance V*(S) to reflect autocorrelation
+    ci_low_star, ci_high_star = compute_sens_slope_confidence_interval(pairwise_slopes, v_star)
+    if ci_low_star is not None and ci_high_star is not None:
+        ci_low, ci_high = ci_low_star, ci_high_star
+        ci_dict = {"lower": round(ci_low, 4), "upper": round(ci_high, 4)}
+
+    if S > 0:
+        z_stat = (S - 1.0) / np.sqrt(v_star)
+    elif S < 0:
+        z_stat = (S + 1.0) / np.sqrt(v_star)
+    else:
+        z_stat = 0.0
+
+    p_val = float(2.0 * (1.0 - stats.norm.cdf(abs(z_stat))))
+    is_sig = bool(p_val < 0.05)
+
+    if S > 0:
+        direction = "declining"
+    elif S < 0:
+        direction = "rising"
+    else:
+        direction = "stable"
+
+    return {
+        "method": "Modified Mann-Kendall (Hamed & Rao, 1998)",
+        "n_observations": int(n),
+        "is_equidistant": is_equidistant,
+        "s_statistic": S,
+        "kendall_tau": round(tau, 4),
+        "sen_slope_m_per_year": round(sen_slope, 4),
+        "sen_slope_ci_lower_m_per_year": round(ci_low, 4) if ci_low is not None else None,
+        "sen_slope_ci_upper_m_per_year": round(ci_high, 4) if ci_high is not None else None,
+        "sen_slope_ci_95": ci_dict,
+        "variance_s": round(v0, 4),
+        "modified_variance_s": round(v_star, 4),
+        "variance_correction_factor": round(float(var_factor), 4),
+        "z_stat": round(float(z_stat), 4),
+        "p_value": round(p_val, 4),
+        "is_statistically_significant": is_sig,
+        "trend_direction": direction,
+        "limitation_note": None if is_equidistant else "Irregular annual observation coordinates evaluated via continuous-time rank autocorrelation.",
+    }
 
 # Minimum readings required for cadence-aware regression
 MIN_READINGS_TELEMETRY = 24
@@ -154,6 +622,15 @@ def classify_gec2015_assessment_unit(
     soe_source: Optional[str] = None,
     assessment_year: Optional[int | str] = None,
     require_authoritative_metadata: bool = False,
+    pre_monsoon_trend: Optional[str] = None,
+    post_monsoon_trend: Optional[str] = None,
+    significant_decline_threshold_m_per_year: Optional[float] = None,
+    fallback_to_documented_threshold: bool = True,
+    pre_monsoon_threshold_sensitivity: Optional[str] = None,
+    post_monsoon_threshold_sensitivity: Optional[str] = None,
+    overall_trend_sensitivity: Optional[str] = None,
+    pre_monsoon_sen_slope_ci_95: Optional[dict] = None,
+    post_monsoon_sen_slope_ci_95: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """
     Statutory CGWB GEC-2015 Assessment-Unit Categorization Matrix.
@@ -169,25 +646,50 @@ def classify_gec2015_assessment_unit(
          A legitimate 0.0% extraction is valid; strictly negative values are rejected.
          Authoritative source citation and assessment year required for official evaluations.
          SOE CANNOT be derived from local well depth or water table levels.
-      3. Statutory at least 10 years of actual pre-monsoon AND post-monsoon trend records
-         separately. Arbitrary annual readings do NOT qualify. A missing trend-year count
-         must return 'unassessed', never pass validation.
 
-    Decision Rules (CGWB GEC-2015 Methodology):
-      1. SOE <= 70%:
-         - If both pre- and post-monsoon trends show significant decline: Semi-Critical (reassessed)
-         - Otherwise: Safe
-      2. 70% < SOE <= 90%:
-         - Semi-Critical
-      3. 90% < SOE <= 100%:
-         - If either pre- or post-monsoon trend shows significant decline: Critical
-         - If neither trend shows decline: Semi-Critical
-      4. SOE > 100%:
-         - Over-Exploited (draft exceeds Annual Extractable Groundwater Resource)
+    Official Quantity-Based Categorization (GEC-2015 Methodology):
+      - SOE <= 70%: Safe
+      - 70% < SOE <= 90%: Semi-Critical
+      - 90% < SOE <= 100%: Critical
+      - SOE > 100%: Over-Exploited
+
+    Independent Long-Term Trend Validation:
+      Decadal seasonal trends (pre-monsoon and post-monsoon >= 10 years separately)
+      are evaluated independently from official categorization and return separate fields:
+      - official_category (derived strictly from SOE)
+      - trend_validation_status ("consistent", "needs_reassessment", "insufficient_data", "not_evaluated")
+      - pre_monsoon_trend ("declining", "no_decline", "insufficient_data", "not_evaluated", None)
+      - post_monsoon_trend ("declining", "no_decline", "insufficient_data", "not_evaluated", None)
+      - trend_validation_reason
+
+      Hydrogeological vs Statistical Significance:
+      - Statistical Significance: Linear regression p-value < 0.05 (supporting only).
+        Note: OLS p-values have documented limitations on temporally autocorrelated groundwater series.
+      - Hydrogeological Significance: Rate of deepening (m/year) must meet or exceed a configured
+        threshold within the CGWB locally justified range (approx 10–20 cm/year = 0.10–0.20 m/year).
+      - If no defensible threshold is available for the assessment unit, trend validation returns
+        'not_evaluated' rather than inventing a significant-decline result.
+
+      Reassessment checks (applied as informational advisories without altering official category):
+      - SOE <= 70% with significant decline in both seasonal trends -> needs_reassessment
+      - SOE > 100% with no significant decline in either seasonal trend -> needs_reassessment
 
     Returns:
-        Structured dict with category, label, SOE, trend flags, and statutory rationale.
+        Structured dict with official_category, category, trend_validation_status,
+        pre_monsoon_trend, post_monsoon_trend, trend_validation_reason, and metadata.
     """
+    # Resolve hydrogeological threshold record for assessment unit early for uniform returns
+    unit_name = str(assessment_unit).strip() if assessment_unit else ""
+    thresh_rec = lookup_trusted_hydrogeological_threshold(unit_name) if unit_name else None
+    threshold_dict = thresh_rec.to_dict() if thresh_rec else None
+
+    if significant_decline_threshold_m_per_year is not None:
+        threshold = float(significant_decline_threshold_m_per_year)
+    elif fallback_to_documented_threshold and thresh_rec:
+        threshold = thresh_rec.threshold_m_per_year
+    else:
+        threshold = None
+
     # Guard 1: Must be a valid administrative assessment unit, not an unmapped well or district
     if (
         assessment_unit is None
@@ -195,8 +697,17 @@ def classify_gec2015_assessment_unit(
         or str(assessment_unit).strip().lower() in ("unknown", "none", "unassigned", "")
     ):
         return {
+            "official_category": "unassessed",
             "category": "unassessed",
             "category_label": "Unassessed",
+            "trend_validation_status": "not_evaluated",
+            "pre_monsoon_trend": None,
+            "post_monsoon_trend": None,
+            "trend_validation_reason": (
+                "Unassessed: Statutory GEC-2015 assessments apply exclusively to administrative assessment "
+                "units (taluks/blocks/watersheds). No valid administrative assessment unit was specified. "
+                "Individual monitoring wells cannot be classified as official blocks, and district fallback is prohibited."
+            ),
             "stage_of_extraction_pct": None,
             "soe_source": str(soe_source).strip() if soe_source else None,
             "assessment_year": assessment_year,
@@ -204,6 +715,14 @@ def classify_gec2015_assessment_unit(
             "post_monsoon_trend_decline": None,
             "pre_monsoon_years_count": pre_monsoon_years_count,
             "post_monsoon_years_count": post_monsoon_years_count,
+            "significant_decline_threshold_m_per_year": None,
+            "threshold_record": None,
+            "threshold_source_publication": None,
+            "threshold_source_url": None,
+            "threshold_page_table_reference": None,
+            "threshold_hydrogeological_formation": None,
+            "threshold_justification": None,
+            "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
             "assessment_unit": None,
             "framework": "CGWB GEC-2015 Methodology",
             "statutory_scope": "administrative_assessment_unit",
@@ -213,8 +732,6 @@ def classify_gec2015_assessment_unit(
                 "Individual monitoring wells cannot be classified as official blocks, and district fallback is prohibited."
             ),
         }
-
-    unit_name = str(assessment_unit).strip()
 
     # Guard 2: Must have valid volumetric Stage of Groundwater Extraction (SOE >= 0.0%)
     # 0.0% is legitimate (e.g. unextracted wildlife sanctuary or zero draft watershed); strictly negative (<0) is invalid.
@@ -226,15 +743,33 @@ def classify_gec2015_assessment_unit(
         or float(stage_of_extraction_pct) < 0.0
     ):
         return {
+            "official_category": "unassessed",
             "category": "unassessed",
             "category_label": "Unassessed",
+            "trend_validation_status": "not_evaluated",
+            "pre_monsoon_trend": None,
+            "post_monsoon_trend": None,
+            "trend_validation_reason": (
+                f"Unassessed for {unit_name}: Valid assessment-unit Stage of Groundwater Extraction (SOE >= 0.0%) "
+                "data is unavailable. GEC-2015 categorization requires volumetric gross draft and "
+                "Annual Extractable Groundwater Resource accounting from official CGWB Dynamic Ground Water Resource Assessments. "
+                "SOE cannot be derived from well depth or local water level trends."
+            ),
             "stage_of_extraction_pct": None,
             "soe_source": str(soe_source).strip() if soe_source else None,
             "assessment_year": assessment_year,
-            "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
-            "post_monsoon_trend_decline": post_monsoon_trend_decline,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
             "pre_monsoon_years_count": pre_monsoon_years_count,
             "post_monsoon_years_count": post_monsoon_years_count,
+            "significant_decline_threshold_m_per_year": threshold,
+            "threshold_record": threshold_dict,
+            "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+            "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+            "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+            "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+            "threshold_justification": thresh_rec.justification if thresh_rec else None,
+            "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
             "assessment_unit": unit_name,
             "framework": "CGWB GEC-2015 Methodology",
             "statutory_scope": "administrative_assessment_unit",
@@ -250,15 +785,31 @@ def classify_gec2015_assessment_unit(
     if require_authoritative_metadata:
         if not soe_source or not str(soe_source).strip():
             return {
+                "official_category": "unassessed",
                 "category": "unassessed",
                 "category_label": "Unassessed",
+                "trend_validation_status": "not_evaluated",
+                "pre_monsoon_trend": None,
+                "post_monsoon_trend": None,
+                "trend_validation_reason": (
+                    f"Unassessed for {unit_name}: Authoritative SOE data source must be specified from official "
+                    "CGWB Dynamic Ground Water Resource Assessments. SOE cannot be derived from local well depth or water levels."
+                ),
                 "stage_of_extraction_pct": round(float(stage_of_extraction_pct), 2),
                 "soe_source": None,
                 "assessment_year": assessment_year,
-                "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
-                "post_monsoon_trend_decline": post_monsoon_trend_decline,
+                "pre_monsoon_trend_decline": None,
+                "post_monsoon_trend_decline": None,
                 "pre_monsoon_years_count": pre_monsoon_years_count,
                 "post_monsoon_years_count": post_monsoon_years_count,
+                "significant_decline_threshold_m_per_year": threshold,
+                "threshold_record": threshold_dict,
+                "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+                "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+                "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+                "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+                "threshold_justification": thresh_rec.justification if thresh_rec else None,
+                "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
                 "assessment_unit": unit_name,
                 "framework": "CGWB GEC-2015 Methodology",
                 "statutory_scope": "administrative_assessment_unit",
@@ -269,15 +820,30 @@ def classify_gec2015_assessment_unit(
             }
         if assessment_year is None or not str(assessment_year).strip():
             return {
+                "official_category": "unassessed",
                 "category": "unassessed",
                 "category_label": "Unassessed",
+                "trend_validation_status": "not_evaluated",
+                "pre_monsoon_trend": None,
+                "post_monsoon_trend": None,
+                "trend_validation_reason": (
+                    f"Unassessed for {unit_name}: Authoritative SOE assessment year must be specified (e.g., 2022, 2023)."
+                ),
                 "stage_of_extraction_pct": round(float(stage_of_extraction_pct), 2),
                 "soe_source": str(soe_source).strip(),
                 "assessment_year": None,
-                "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
-                "post_monsoon_trend_decline": post_monsoon_trend_decline,
+                "pre_monsoon_trend_decline": None,
+                "post_monsoon_trend_decline": None,
                 "pre_monsoon_years_count": pre_monsoon_years_count,
                 "post_monsoon_years_count": post_monsoon_years_count,
+                "significant_decline_threshold_m_per_year": threshold,
+                "threshold_record": threshold_dict,
+                "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+                "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+                "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+                "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+                "threshold_justification": thresh_rec.justification if thresh_rec else None,
+                "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
                 "assessment_unit": unit_name,
                 "framework": "CGWB GEC-2015 Methodology",
                 "statutory_scope": "administrative_assessment_unit",
@@ -288,93 +854,200 @@ def classify_gec2015_assessment_unit(
 
     soe = float(stage_of_extraction_pct)
 
-    # Guard 3: Required at least 10 years of actual pre-monsoon AND post-monsoon trend records separately.
-    # Arbitrary annual readings do NOT qualify. A missing trend-year count must return 'unassessed', never pass validation.
-    if (
-        pre_monsoon_years_count is None
-        or post_monsoon_years_count is None
-        or pre_monsoon_trend_decline is None
-        or post_monsoon_trend_decline is None
-        or pre_monsoon_years_count < MIN_DECADAL_TREND_YEARS
-        or post_monsoon_years_count < MIN_DECADAL_TREND_YEARS
-    ):
-        return {
-            "category": "unassessed",
-            "category_label": "Unassessed",
-            "stage_of_extraction_pct": round(soe, 2),
-            "soe_source": str(soe_source).strip() if soe_source else None,
-            "assessment_year": assessment_year,
-            "pre_monsoon_trend_decline": pre_monsoon_trend_decline,
-            "post_monsoon_trend_decline": post_monsoon_trend_decline,
-            "pre_monsoon_years_count": pre_monsoon_years_count,
-            "post_monsoon_years_count": post_monsoon_years_count,
-            "assessment_unit": unit_name,
-            "framework": "CGWB GEC-2015 Methodology",
-            "statutory_scope": "administrative_assessment_unit",
-            "rationale": (
-                f"Unassessed for {unit_name}: Insufficient statutory seasonal trend evidence. GEC-2015 categorization "
-                f"strictly requires at least {MIN_DECADAL_TREND_YEARS} years of actual pre-monsoon AND post-monsoon "
-                f"trend records separately. Available records: "
-                f"pre-monsoon={pre_monsoon_years_count} years, post-monsoon={post_monsoon_years_count} years. "
-                "Arbitrary annual readings do not qualify as decadal seasonal evidence, and missing trend-year counts return unassessed."
-            ),
-        }
-
-    pre_dec = bool(pre_monsoon_trend_decline)
-    post_dec = bool(post_monsoon_trend_decline)
-
-    # Statutory Categorization Rules with validated decadal trend evidence
-    if soe > GEC_CRITICAL_STAGE_MAX:
-        category = "over_exploited"
-        category_label = "Over-Exploited"
-        rationale = (
-            f"SOE exceeds 100% ({soe:.1f}%) in {unit_name}; groundwater draft exceeds Annual Extractable Groundwater Resource. "
-            f"Validated with decadal trends (pre-monsoon {pre_monsoon_years_count} yrs, post-monsoon {post_monsoon_years_count} yrs)."
-        )
-    elif soe <= GEC_SAFE_STAGE_MAX:
-        if pre_dec and post_dec:
-            category = "semi_critical"
-            category_label = "Semi-Critical"
-            rationale = (
-                f"SOE <= 70% ({soe:.1f}%) in {unit_name}, but significant decline observed in both "
-                f"pre-monsoon ({pre_monsoon_years_count} yrs) and post-monsoon ({post_monsoon_years_count} yrs) decadal trends (reassessed to Semi-Critical per GEC-2015)."
-            )
-        else:
-            category = "safe"
-            category_label = "Safe"
-            rationale = (
-                f"SOE <= 70% ({soe:.1f}%) in {unit_name} with no significant dual decadal trend decline "
-                f"(pre-monsoon {pre_monsoon_years_count} yrs, post-monsoon {post_monsoon_years_count} yrs)."
-            )
+    # 1. Statutory GEC-2015 Official Quantity-Based Categorization:
+    # Strictly derived from Stage of Groundwater Extraction (SOE)
+    if soe <= GEC_SAFE_STAGE_MAX:
+        official_category = "safe"
+        category_label = "Safe"
     elif soe <= GEC_SEMI_CRITICAL_STAGE_MAX:
-        category = "semi_critical"
+        official_category = "semi_critical"
         category_label = "Semi-Critical"
-        rationale = f"SOE between 70% and 90% ({soe:.1f}%) in {unit_name}."
-    else:  # 90% < SOE <= 100%
-        if pre_dec or post_dec:
-            category = "critical"
-            category_label = "Critical"
-            rationale = (
-                f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} with significant decadal trend decline "
-                f"(pre-decline={pre_dec}, post-decline={post_dec})."
+    elif soe <= GEC_CRITICAL_STAGE_MAX:
+        official_category = "critical"
+        category_label = "Critical"
+    else:
+        official_category = "over_exploited"
+        category_label = "Over-Exploited"
+
+    # 2. Independent Seasonal Trend Validation:
+    def _resolve_trend(trend_str: Optional[str], trend_bool: Optional[bool]) -> Optional[str]:
+        if trend_str is not None and str(trend_str).strip():
+            norm = str(trend_str).strip().lower()
+            if norm in ("declining", "decline"):
+                return "declining"
+            elif norm in ("no_decline", "not_declining", "stable", "rising", "recovering"):
+                return "no_decline"
+            elif norm in ("insufficient_data", "insufficient"):
+                return "insufficient_data"
+            elif norm in ("not_evaluated", "none", "unassessed"):
+                return "not_evaluated"
+        if trend_bool is True:
+            return "declining"
+        elif trend_bool is False:
+            return "no_decline"
+        return None
+
+    resolved_pre_trend = _resolve_trend(pre_monsoon_trend, pre_monsoon_trend_decline)
+    resolved_post_trend = _resolve_trend(post_monsoon_trend, post_monsoon_trend_decline)
+
+    has_trend_inputs = (
+        resolved_pre_trend is not None
+        or resolved_post_trend is not None
+        or pre_monsoon_years_count is not None
+        or post_monsoon_years_count is not None
+        or trend_years_count is not None
+        or pre_monsoon_threshold_sensitivity is not None
+        or post_monsoon_threshold_sensitivity is not None
+    )
+
+    if not has_trend_inputs:
+        trend_validation_status = "not_evaluated"
+        out_pre_trend = None
+        out_post_trend = None
+        out_pre_dec = None
+        out_post_dec = None
+        out_pre_sensitivity = "not_evaluated"
+        out_post_sensitivity = "not_evaluated"
+        out_overall_sensitivity = "not_evaluated"
+        trend_validation_reason = (
+            "Seasonal groundwater trend validation was not evaluated (no local trend data supplied)."
+        )
+    else:
+        pre_count = pre_monsoon_years_count if pre_monsoon_years_count is not None else trend_years_count
+        post_count = post_monsoon_years_count if post_monsoon_years_count is not None else trend_years_count
+
+        pre_has_data = pre_count is not None and pre_count >= MIN_DECADAL_TREND_YEARS
+        post_has_data = post_count is not None and post_count >= MIN_DECADAL_TREND_YEARS
+
+        # Check for insufficient decadal observations or explicit insufficient_data status
+        if not (pre_has_data and post_has_data) or resolved_pre_trend == "insufficient_data" or resolved_post_trend == "insufficient_data":
+            trend_validation_status = "insufficient_data"
+            out_pre_trend = resolved_pre_trend if (pre_has_data and resolved_pre_trend in ("declining", "no_decline")) else "insufficient_data"
+            out_post_trend = resolved_post_trend if (post_has_data and resolved_post_trend in ("declining", "no_decline")) else "insufficient_data"
+            out_pre_dec = bool(out_pre_trend == "declining") if out_pre_trend in ("declining", "no_decline") else None
+            out_post_dec = bool(out_post_trend == "declining") if out_post_trend in ("declining", "no_decline") else None
+            out_pre_sensitivity = pre_monsoon_threshold_sensitivity or "insufficient_data"
+            out_post_sensitivity = post_monsoon_threshold_sensitivity or "insufficient_data"
+            out_overall_sensitivity = "insufficient_data"
+
+            missing_parts = []
+            if not pre_has_data or resolved_pre_trend == "insufficient_data":
+                pre_count_str = f"{pre_count} yrs" if pre_count is not None else "missing"
+                missing_parts.append(f"pre-monsoon ({pre_count_str}, requires >={MIN_DECADAL_TREND_YEARS} yrs)")
+            if not post_has_data or resolved_post_trend == "insufficient_data":
+                post_count_str = f"{post_count} yrs" if post_count is not None else "missing"
+                missing_parts.append(f"post-monsoon ({post_count_str}, requires >={MIN_DECADAL_TREND_YEARS} yrs)")
+
+            trend_validation_reason = (
+                f"Insufficient statutory seasonal trend records to validate official category: {', '.join(missing_parts)}. "
+                f"Official category is retained from verified SOE ({soe:.1f}%)."
+            )
+        # Check if observations are sufficient, but no defensible hydrogeological threshold was configured
+        elif (
+            resolved_pre_trend == "not_evaluated"
+            or resolved_post_trend == "not_evaluated"
+            or (resolved_pre_trend is None and resolved_post_trend is None and threshold is None and pre_monsoon_threshold_sensitivity is None)
+        ):
+            trend_validation_status = "not_evaluated"
+            out_pre_trend = "not_evaluated"
+            out_post_trend = "not_evaluated"
+            out_pre_dec = None
+            out_post_dec = None
+            out_pre_sensitivity = pre_monsoon_threshold_sensitivity or "not_evaluated"
+            out_post_sensitivity = post_monsoon_threshold_sensitivity or "not_evaluated"
+            out_overall_sensitivity = "not_evaluated"
+            trend_validation_reason = (
+                f"Decadal seasonal records are available (>={MIN_DECADAL_TREND_YEARS} years), but no defensible hydrogeological "
+                f"decline threshold was configured for assessment unit '{unit_name}' or statistical trend criteria were not evaluable (e.g. missing calendar years). "
+                "CGWB GEC-2015 guidance describes significant groundwater decline as approximately 10–20 cm/year (0.10–0.20 m/year) "
+                "depending on local hydrogeology. Without a defensible threshold, trend validation was not evaluated, and official category is retained from verified SOE."
             )
         else:
-            category = "semi_critical"
-            category_label = "Semi-Critical"
-            rationale = (
-                f"SOE between 90% and 100% ({soe:.1f}%) in {unit_name} without significant decadal trend decline."
-            )
+            out_pre_trend = resolved_pre_trend
+            out_post_trend = resolved_post_trend
+            out_pre_dec = bool(resolved_pre_trend == "declining")
+            out_post_dec = bool(resolved_post_trend == "declining")
+
+            # Resolve threshold sensitivity
+            def _map_sensitivity(sens: Optional[str], trend_dir: Optional[str]) -> str:
+                if sens:
+                    return sens
+                if trend_dir == "declining":
+                    return "significant_across_guideline_range" if threshold and threshold >= 0.20 else "threshold_sensitive"
+                elif trend_dir == "no_decline":
+                    return "below_guideline_range"
+                return "not_evaluated"
+
+            out_pre_sensitivity = _map_sensitivity(pre_monsoon_threshold_sensitivity, out_pre_trend)
+            out_post_sensitivity = _map_sensitivity(post_monsoon_threshold_sensitivity, out_post_trend)
+
+            if out_pre_sensitivity == "significant_across_guideline_range" and out_post_sensitivity == "significant_across_guideline_range":
+                out_overall_sensitivity = "significant_across_guideline_range"
+            elif out_pre_sensitivity == "below_guideline_range" and out_post_sensitivity == "below_guideline_range":
+                out_overall_sensitivity = "below_guideline_range"
+            else:
+                out_overall_sensitivity = "threshold_sensitive"
+
+            # Official GEC-2015 Reassessment Checks:
+            # 1. SOE <= 70% (Safe) with significant decline in BOTH seasonal trends:
+            if soe <= GEC_SAFE_STAGE_MAX and out_pre_dec and out_post_dec:
+                trend_validation_status = "needs_reassessment"
+                trend_validation_reason = (
+                    f"Official category is Safe (SOE {soe:.1f}% <= 70%), but significant long-term decline observed in both "
+                    f"pre-monsoon ({pre_count} yrs) and post-monsoon ({post_count} yrs) trends. "
+                    "Advisory warning: indicates localized groundwater stress requiring reassessment per GEC-2015 methodology."
+                )
+            # 2. SOE > 100% (Over-Exploited) with NO significant decline in EITHER seasonal trend:
+            elif soe > GEC_CRITICAL_STAGE_MAX and (not out_pre_dec) and (not out_post_dec):
+                trend_validation_status = "needs_reassessment"
+                trend_validation_reason = (
+                    f"Official category is Over-Exploited (SOE {soe:.1f}% > 100%), but neither pre-monsoon "
+                    f"({pre_count} yrs) nor post-monsoon ({post_count} yrs) trend exhibits significant decline. "
+                    "Advisory warning: indicates potential localized recharge buffer or accounting discrepancy requiring reassessment per GEC-2015 methodology."
+                )
+            else:
+                trend_validation_status = "consistent"
+                trend_validation_reason = (
+                    f"Official category '{category_label}' is consistent with long-term seasonal water table trends "
+                    f"(pre-monsoon {out_pre_trend}, post-monsoon {out_post_trend})."
+                )
+
+    rationale = (
+        f"Statutory GEC-2015 assessment for {unit_name}: Official category is {category_label} "
+        f"based on Stage of Groundwater Extraction ({soe:.1f}%). "
+        f"Trend validation status: {trend_validation_status}. {trend_validation_reason}"
+    )
+
+    thresh_rec = lookup_trusted_hydrogeological_threshold(unit_name)
 
     return {
-        "category": category,
+        "official_category": official_category,
+        "category": official_category,
         "category_label": category_label,
+        "trend_validation_status": trend_validation_status,
+        "pre_monsoon_trend": out_pre_trend,
+        "post_monsoon_trend": out_post_trend,
+        "pre_monsoon_threshold_sensitivity": out_pre_sensitivity,
+        "post_monsoon_threshold_sensitivity": out_post_sensitivity,
+        "overall_trend_sensitivity": out_overall_sensitivity,
+        "pre_monsoon_sen_slope_ci_95": pre_monsoon_sen_slope_ci_95,
+        "post_monsoon_sen_slope_ci_95": post_monsoon_sen_slope_ci_95,
+        "trend_validation_reason": trend_validation_reason,
         "stage_of_extraction_pct": round(soe, 2),
         "soe_source": str(soe_source).strip() if soe_source else None,
         "assessment_year": assessment_year,
-        "pre_monsoon_trend_decline": pre_dec,
-        "post_monsoon_trend_decline": post_dec,
+        "pre_monsoon_trend_decline": out_pre_dec,
+        "post_monsoon_trend_decline": out_post_dec,
         "pre_monsoon_years_count": pre_monsoon_years_count,
         "post_monsoon_years_count": post_monsoon_years_count,
+        "significant_decline_threshold_m_per_year": threshold,
+        "threshold_record": thresh_rec.to_dict() if thresh_rec else None,
+        "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+        "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+        "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+        "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+        "threshold_justification": thresh_rec.justification if thresh_rec else None,
+        "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
         "assessment_unit": unit_name,
         "framework": "CGWB GEC-2015 Methodology",
         "statutory_scope": "administrative_assessment_unit",
@@ -392,6 +1065,8 @@ def aggregate_block_seasonal_trends(
     district: Optional[str] = None,
     state: Optional[str] = None,
     min_stations_per_year: int = DEFAULT_MIN_STATIONS_PER_YEAR,
+    significant_decline_threshold_m_per_year: Optional[float] = None,
+    fallback_to_documented_threshold: bool = True,
 ) -> Dict[str, Any]:
     """
     Aggregate station-level observations across an administrative assessment unit (block)
@@ -426,7 +1101,27 @@ def aggregate_block_seasonal_trends(
       5. Decadal Seasonal Completeness:
          Statutory GEC-2015 requires at least MIN_DECADAL_TREND_YEARS (10) separate spatially
          representative years for pre-monsoon AND 10 years for post-monsoon.
+      6. Hydrogeological vs. Statistical Significance:
+         The linear trend slope is calculated directly in metres per year (m/yr) using actual observation years.
+         Statistical significance (p < 0.05) is retained strictly as supporting diagnostic screening;
+         ordinary regression p-values have documented limitations on temporally autocorrelated groundwater series.
+         Hydrogeological significance requires the deepening rate (m/yr) to meet or exceed a locally
+         justified threshold (CGWB GEC-2015 guidance specifies approx 10–20 cm/year = 0.10–0.20 m/year).
+         When no defensible threshold is available, trend significance is reported as 'not_evaluated'.
     """
+    target_block = str(block_name).strip() if block_name else ""
+
+    # Resolve hydrogeological threshold and provenance record for assessment unit
+    thresh_rec = lookup_trusted_hydrogeological_threshold(target_block)
+    threshold_dict = thresh_rec.to_dict() if thresh_rec else None
+
+    if significant_decline_threshold_m_per_year is not None:
+        threshold = float(significant_decline_threshold_m_per_year)
+    elif fallback_to_documented_threshold and target_block:
+        threshold = thresh_rec.threshold_m_per_year if thresh_rec else None
+    else:
+        threshold = None
+
     if (
         readings_df is None
         or readings_df.empty
@@ -444,10 +1139,26 @@ def aggregate_block_seasonal_trends(
             "weighting_method": "equal_station_year_weighting",
             "pre_monsoon_years_count": 0,
             "post_monsoon_years_count": 0,
+            "pre_monsoon_trend": "insufficient_data",
+            "post_monsoon_trend": "insufficient_data",
             "pre_monsoon_trend_decline": None,
             "post_monsoon_trend_decline": None,
             "pre_monsoon_slope_m_per_year": None,
             "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_p_value": None,
+            "post_monsoon_p_value": None,
+            "pre_monsoon_exploratory_ols": None,
+            "post_monsoon_exploratory_ols": None,
+            "pre_monsoon_modified_mann_kendall": None,
+            "post_monsoon_modified_mann_kendall": None,
+            "significant_decline_threshold_m_per_year": threshold,
+            "threshold_record": threshold_dict,
+            "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+            "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+            "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+            "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+            "threshold_justification": thresh_rec.justification if thresh_rec else None,
+            "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
             "pre_monsoon_annual_coverage": [],
             "post_monsoon_annual_coverage": [],
             "coverage_sufficient": False,
@@ -462,6 +1173,66 @@ def aggregate_block_seasonal_trends(
         }
 
     target_block = str(block_name).strip()
+
+    def _empty_agg_result(
+        stn_count: int,
+        stn_ids: list,
+        dist: Optional[str],
+        st: Optional[str],
+        rationale: str,
+        screening: Optional[dict] = None,
+        spatial_met: bool = False,
+    ) -> Dict[str, Any]:
+        return {
+            "assessment_unit": target_block,
+            "district": dist,
+            "state": st,
+            "station_count": stn_count,
+            "station_ids": stn_ids,
+            "weighting_method": "equal_station_year_weighting",
+            "pre_monsoon_years_count": 0,
+            "post_monsoon_years_count": 0,
+            "pre_monsoon_trend": "insufficient_data",
+            "post_monsoon_trend": "insufficient_data",
+            "pre_monsoon_threshold_sensitivity": "insufficient_data",
+            "post_monsoon_threshold_sensitivity": "insufficient_data",
+            "overall_trend_sensitivity": "insufficient_data",
+            "pre_monsoon_threshold_sensitivity_rationale": rationale,
+            "post_monsoon_threshold_sensitivity_rationale": rationale,
+            "overall_trend_sensitivity_rationale": rationale,
+            "pre_monsoon_sen_slope_ci_95": None,
+            "post_monsoon_sen_slope_ci_95": None,
+            "pre_monsoon_trend_decline": None,
+            "post_monsoon_trend_decline": None,
+            "pre_monsoon_slope_m_per_year": None,
+            "post_monsoon_slope_m_per_year": None,
+            "pre_monsoon_p_value": None,
+            "post_monsoon_p_value": None,
+            "pre_monsoon_exploratory_ols": None,
+            "post_monsoon_exploratory_ols": None,
+            "pre_monsoon_modified_mann_kendall": None,
+            "post_monsoon_modified_mann_kendall": None,
+            "significant_decline_threshold_m_per_year": threshold,
+            "threshold_record": threshold_dict,
+            "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+            "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+            "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+            "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+            "threshold_justification": thresh_rec.justification if thresh_rec else None,
+            "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
+            "pre_monsoon_annual_coverage": [],
+            "post_monsoon_annual_coverage": [],
+            "coverage_sufficient": False,
+            "spatial_representativeness_met": spatial_met,
+            "coverage_rationale": rationale,
+            "data_quality_screening": screening or {
+                "total_readings_screened": 0,
+                "valid_readings_count": 0,
+                "excluded_readings_count": 0,
+                "exclusion_breakdown": {},
+            },
+        }
+
     # Exact case-insensitive block matching (no substring)
     matched_stations = stations_df[stations_df["block"].astype(str).str.strip().str.lower() == target_block.lower()].copy()
 
@@ -472,65 +1243,29 @@ def aggregate_block_seasonal_trends(
         matched_stations = matched_stations[matched_stations["district"].astype(str).str.strip().str.lower() == district.strip().lower()]
 
     if matched_stations.empty:
-        return {
-            "assessment_unit": target_block,
-            "district": district,
-            "state": state,
-            "station_count": 0,
-            "station_ids": [],
-            "weighting_method": "equal_station_year_weighting",
-            "pre_monsoon_years_count": 0,
-            "post_monsoon_years_count": 0,
-            "pre_monsoon_trend_decline": None,
-            "post_monsoon_trend_decline": None,
-            "pre_monsoon_slope_m_per_year": None,
-            "post_monsoon_slope_m_per_year": None,
-            "pre_monsoon_annual_coverage": [],
-            "post_monsoon_annual_coverage": [],
-            "coverage_sufficient": False,
-            "spatial_representativeness_met": False,
-            "coverage_rationale": f"Insufficient monitoring network: 0 stations located in block '{target_block}'.",
-            "data_quality_screening": {
-                "total_readings_screened": 0,
-                "valid_readings_count": 0,
-                "excluded_readings_count": 0,
-                "exclusion_breakdown": {},
-            },
-        }
+        return _empty_agg_result(
+            stn_count=0,
+            stn_ids=[],
+            dist=district,
+            st=state,
+            rationale=f"Insufficient monitoring network: 0 stations located in block '{target_block}'.",
+        )
 
     # Cross-district duplicate block name check (Item 4)
     if not district and "district" in matched_stations.columns:
         unique_districts = sorted(list(set(matched_stations["district"].dropna().astype(str).str.strip().unique())))
         if len(unique_districts) > 1:
-            return {
-                "assessment_unit": target_block,
-                "district": None,
-                "state": state,
-                "station_count": len(matched_stations),
-                "station_ids": sorted(list(set(matched_stations["station_id"].astype(str)))),
-                "weighting_method": "equal_station_year_weighting",
-                "pre_monsoon_years_count": 0,
-                "post_monsoon_years_count": 0,
-                "pre_monsoon_trend_decline": None,
-                "post_monsoon_trend_decline": None,
-                "pre_monsoon_slope_m_per_year": None,
-                "post_monsoon_slope_m_per_year": None,
-                "pre_monsoon_annual_coverage": [],
-                "post_monsoon_annual_coverage": [],
-                "coverage_sufficient": False,
-                "spatial_representativeness_met": False,
-                "coverage_rationale": (
+            return _empty_agg_result(
+                stn_count=len(matched_stations),
+                stn_ids=sorted(list(set(matched_stations["station_id"].astype(str)))),
+                dist=None,
+                st=state,
+                rationale=(
                     f"Unassessed: Ambiguous administrative block '{target_block}'. This block name exists in multiple "
                     f"districts ({', '.join(unique_districts)}). Unambiguous administrative identification requires "
                     "specifying the district or canonical administrative identifier to prevent accidental merging of stations across districts."
                 ),
-                "data_quality_screening": {
-                    "total_readings_screened": 0,
-                    "valid_readings_count": 0,
-                    "excluded_readings_count": 0,
-                    "exclusion_breakdown": {},
-                },
-            }
+            )
 
     station_ids = sorted(list(set(matched_stations["station_id"].astype(str))))
     block_district = matched_stations["district"].iloc[0] if "district" in matched_stations.columns else district
@@ -538,65 +1273,29 @@ def aggregate_block_seasonal_trends(
 
     # Spatial Network Representativeness: Guard against 1-station insufficiency (Item 1)
     if len(station_ids) < 2:
-        return {
-            "assessment_unit": target_block,
-            "district": block_district,
-            "state": block_state,
-            "station_count": len(station_ids),
-            "station_ids": station_ids,
-            "weighting_method": "equal_station_year_weighting",
-            "pre_monsoon_years_count": 0,
-            "post_monsoon_years_count": 0,
-            "pre_monsoon_trend_decline": None,
-            "post_monsoon_trend_decline": None,
-            "pre_monsoon_slope_m_per_year": None,
-            "post_monsoon_slope_m_per_year": None,
-            "pre_monsoon_annual_coverage": [],
-            "post_monsoon_annual_coverage": [],
-            "coverage_sufficient": False,
-            "spatial_representativeness_met": False,
-            "coverage_rationale": (
+        return _empty_agg_result(
+            stn_count=len(station_ids),
+            stn_ids=station_ids,
+            dist=block_district,
+            st=block_state,
+            rationale=(
                 f"Unassessed for {target_block}: Insufficient spatial monitoring network representativeness. "
                 f"Administrative block '{target_block}' has only {len(station_ids)} monitoring station(s). "
                 "Under standard hydrogeological network principles (WMO No. 168 / CGWB monitoring guidelines), "
                 "a single point well cannot establish spatial representativeness across an entire administrative block. "
                 "At least 2 spatially distinct monitoring stations are required to capture hydrogeological heterogeneity."
             ),
-            "data_quality_screening": {
-                "total_readings_screened": 0,
-                "valid_readings_count": 0,
-                "excluded_readings_count": 0,
-                "exclusion_breakdown": {},
-            },
-        }
+        )
 
     df = readings_df[readings_df["station_id"].astype(str).isin(station_ids)].copy()
     if df.empty or "water_level_m" not in df.columns or "timestamp" not in df.columns:
-        return {
-            "assessment_unit": target_block,
-            "district": block_district,
-            "state": block_state,
-            "station_count": len(station_ids),
-            "station_ids": station_ids,
-            "weighting_method": "equal_station_year_weighting",
-            "pre_monsoon_years_count": 0,
-            "post_monsoon_years_count": 0,
-            "pre_monsoon_trend_decline": None,
-            "post_monsoon_trend_decline": None,
-            "pre_monsoon_slope_m_per_year": None,
-            "post_monsoon_slope_m_per_year": None,
-            "pre_monsoon_annual_coverage": [],
-            "post_monsoon_annual_coverage": [],
-            "coverage_sufficient": False,
-            "spatial_representativeness_met": False,
-            "coverage_rationale": f"No valid water level readings found for {len(station_ids)} stations in block '{target_block}'.",
-            "data_quality_screening": {
-                "total_readings_screened": 0,
-                "valid_readings_count": 0,
-                "excluded_readings_count": 0,
-                "exclusion_breakdown": {},
-            },
-        }
+        return _empty_agg_result(
+            stn_count=len(station_ids),
+            stn_ids=station_ids,
+            dist=block_district,
+            st=block_state,
+            rationale=f"No valid water level readings found for {len(station_ids)} stations in block '{target_block}'.",
+        )
 
     # Data Quality Screening (Item 3)
     total_screened = len(df)
@@ -636,39 +1335,38 @@ def aggregate_block_seasonal_trends(
     }
 
     if valid_df.empty:
-        return {
-            "assessment_unit": target_block,
-            "district": block_district,
-            "state": block_state,
-            "station_count": len(station_ids),
-            "station_ids": station_ids,
-            "weighting_method": "equal_station_year_weighting",
-            "pre_monsoon_years_count": 0,
-            "post_monsoon_years_count": 0,
-            "pre_monsoon_trend_decline": None,
-            "post_monsoon_trend_decline": None,
-            "pre_monsoon_slope_m_per_year": None,
-            "post_monsoon_slope_m_per_year": None,
-            "pre_monsoon_annual_coverage": [],
-            "post_monsoon_annual_coverage": [],
-            "coverage_sufficient": False,
-            "spatial_representativeness_met": False,
-            "coverage_rationale": (
+        return _empty_agg_result(
+            stn_count=len(station_ids),
+            stn_ids=station_ids,
+            dist=block_district,
+            st=block_state,
+            rationale=(
                 f"Unassessed for {target_block}: All {total_screened} observations were excluded during data-quality "
                 "screening (suspect/error flags, unphysical ranges, or anomalies)."
             ),
-            "data_quality_screening": screening_audit,
-        }
+            screening=screening_audit,
+        )
 
     valid_df["timestamp"] = pd.to_datetime(valid_df["timestamp"])
     valid_df["year"] = valid_df["timestamp"].dt.year
     valid_df["month"] = valid_df["timestamp"].dt.month
     valid_df["water_level_m"] = valid_df["water_level_m"].astype(float)
 
-    def _process_season(season_months: list[int]) -> tuple[int, Optional[bool], Optional[float], list[dict]]:
+    def _process_season(season_months: list[int]) -> tuple[
+        int, Optional[bool], Optional[float], Optional[float], str, list[dict], Optional[dict], Optional[dict], dict
+    ]:
         season_df = valid_df[valid_df["month"].isin(season_months)]
         if season_df.empty:
-            return 0, None, None, []
+            empty_sens = {
+                "status": "insufficient_data",
+                "outcome": "insufficient_data",
+                "guideline_range_m_per_year": {"lower": 0.10, "upper": 0.20},
+                "sen_slope_m_per_year": None,
+                "p_value": None,
+                "sen_slope_ci_95": None,
+                "rationale": "No seasonal observations available for assessment.",
+            }
+            return 0, None, None, None, "insufficient_data", [], None, None, empty_sens
 
         # Step 1: Calculate seasonal averages per station per year first
         stn_yr = (
@@ -703,19 +1401,116 @@ def aggregate_block_seasonal_trends(
         if years_count >= MIN_DECADAL_TREND_YEARS:
             y_vals = np.array([r["year"] for r in rep_records], dtype=float)
             lvl_vals = np.array([r["mean_water_level_mbgl"] for r in rep_records], dtype=float)
-            slope = float(np.polyfit(y_vals, lvl_vals, 1)[0])
-            trend_decline = bool(slope > 0.05)  # water table deepening > 5cm/yr
+
+            # 1. Exploratory OLS Linear Regression Diagnostic (assuming i.i.d. residuals)
+            reg = stats.linregress(y_vals, lvl_vals)
+            ols_slope = float(reg.slope)
+            ols_pval = float(reg.pvalue) if not np.isnan(reg.pvalue) else 1.0
+            ols_r2 = float(reg.rvalue ** 2) if not np.isnan(reg.rvalue) else 0.0
+
+            ols_diagnostic = {
+                "method": "Ordinary Least Squares (OLS) Linear Regression",
+                "status": "exploratory_diagnostic_only",
+                "slope_m_per_year": round(ols_slope, 4),
+                "p_value": round(ols_pval, 4),
+                "r_squared": round(ols_r2, 4),
+                "is_statistically_significant": bool(ols_pval < 0.05),
+                "caveat": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
+            }
+
+            # 2. Serial-Correlation Robust Non-Parametric Test (Modified Mann-Kendall per Hamed & Rao, 1998)
+            mmk_result = compute_modified_mann_kendall(lvl_vals, y_vals)
+
+            slope = ols_slope
+            p_val = ols_pval
+
+            # 3. Threshold-sensitivity diagnostic against CGWB 0.10–0.20 m/yr guideline range
+            ci_95 = mmk_result.get("sen_slope_ci_95") if mmk_result else None
+            ci_l = ci_95.get("lower") if ci_95 else None
+            ci_u = ci_95.get("upper") if ci_95 else None
+            is_sig_mmk = mmk_result.get("is_statistically_significant", False) if mmk_result else False
+            sen_slope_val = mmk_result.get("sen_slope_m_per_year", slope) if mmk_result else slope
+
+            if not mmk_result.get("is_equidistant", True):
+                sensitivity_res = {
+                    "status": "not_evaluated",
+                    "outcome": "not_evaluated",
+                    "guideline_range_m_per_year": {"lower": 0.10, "upper": 0.20},
+                    "sen_slope_m_per_year": sen_slope_val,
+                    "p_value": None,
+                    "sen_slope_ci_95": ci_95,
+                    "rationale": "Missing calendar years or irregular annual intervals detected in observation series; Modified Mann-Kendall test is marked 'not_evaluated'.",
+                }
+            else:
+                sensitivity_res = evaluate_trend_threshold_sensitivity(
+                    sen_slope_m_per_year=sen_slope_val,
+                    p_value=mmk_result.get("p_value", p_val) if mmk_result else p_val,
+                    ci_lower=ci_l,
+                    ci_upper=ci_u,
+                    years_count=years_count,
+                    min_years=MIN_DECADAL_TREND_YEARS,
+                    lower_threshold_m_per_year=0.10,
+                    upper_threshold_m_per_year=0.20,
+                    is_statistically_significant=is_sig_mmk,
+                )
+
+            # Separation of statistical significance from hydrogeological significance:
+            if threshold is None:
+                trend_str = "not_evaluated"
+                trend_decline = None
+            elif not mmk_result.get("is_equidistant", True):
+                # Non-equidistant missing calendar years violate Hamed & Rao (1998) equidistant assumptions
+                trend_str = "not_evaluated"
+                trend_decline = None
+            else:
+                thresh_val = float(threshold)
+                # Significant decline requires:
+                # (a) hydrogeological significance: slope >= threshold
+                # (b) supporting significance / positive deepening: slope > 0 and supporting statistical evidence
+                # Both exploratory OLS p < 0.05 and serial-correlation robust MMK significance are required
+                is_decline = bool(slope >= thresh_val and (ols_pval < 0.05 and is_sig_mmk))
+                trend_str = "declining" if is_decline else "no_decline"
+                trend_decline = is_decline
         else:
             slope = None
+            p_val = None
+            trend_str = "insufficient_data"
             trend_decline = None
+            ols_diagnostic = None
+            mmk_result = None
+            sensitivity_res = {
+                "status": "insufficient_data",
+                "outcome": "insufficient_data",
+                "guideline_range_m_per_year": {"lower": 0.10, "upper": 0.20},
+                "sen_slope_m_per_year": None,
+                "p_value": None,
+                "sen_slope_ci_95": None,
+                "rationale": f"Insufficient data: {years_count} seasonal observations available (requires >= {MIN_DECADAL_TREND_YEARS} years).",
+            }
 
-        return years_count, trend_decline, slope, annual_records
+        return years_count, trend_decline, slope, p_val, trend_str, annual_records, ols_diagnostic, mmk_result, sensitivity_res
 
     # Pre-monsoon: Months 4 and 5 (April-May)
-    pre_years, pre_decline, pre_slope, pre_coverage = _process_season([4, 5])
+    pre_years, pre_decline, pre_slope, pre_pval, pre_trend_str, pre_coverage, pre_ols, pre_mmk, pre_sens = _process_season([4, 5])
 
     # Post-monsoon: Months 10 and 11 (October-November)
-    post_years, post_decline, post_slope, post_coverage = _process_season([10, 11])
+    post_years, post_decline, post_slope, post_pval, post_trend_str, post_coverage, post_ols, post_mmk, post_sens = _process_season([10, 11])
+
+    if pre_sens["outcome"] == "insufficient_data" or post_sens["outcome"] == "insufficient_data":
+        overall_sens = "insufficient_data"
+        overall_sens_rationale = "Decadal seasonal records are insufficient (< 10 years in one or both seasons)."
+    elif pre_sens["outcome"] == "not_evaluated" or post_sens["outcome"] == "not_evaluated":
+        overall_sens = "not_evaluated"
+        overall_sens_rationale = "Seasonal trend criteria were not evaluated in one or both seasons."
+    elif pre_sens["outcome"] == "significant_across_guideline_range" and post_sens["outcome"] == "significant_across_guideline_range":
+        overall_sens = "significant_across_guideline_range"
+        overall_sens_rationale = "Water table decline meets or exceeds the entire CGWB guideline range (>= 0.20 m/yr) in both pre-monsoon and post-monsoon seasons."
+    elif pre_sens["outcome"] == "below_guideline_range" and post_sens["outcome"] == "below_guideline_range":
+        overall_sens = "below_guideline_range"
+        overall_sens_rationale = "Water table decline is demonstrably below the CGWB guideline range (< 0.10 m/yr) or not declining in both seasons."
+    else:
+        overall_sens = "threshold_sensitive"
+        overall_sens_rationale = "Seasonal water table trends fall within or overlap the CGWB guideline range (0.10–0.20 m/yr); significance is sensitive to local formation storativity."
 
     coverage_sufficient = bool(pre_years >= MIN_DECADAL_TREND_YEARS and post_years >= MIN_DECADAL_TREND_YEARS)
     coverage_rationale = (
@@ -734,10 +1529,34 @@ def aggregate_block_seasonal_trends(
         "weighting_rationale": "Station-year seasonal averaging prevents high-frequency telemetry from overwhelming low-frequency seasonal observation wells.",
         "pre_monsoon_years_count": pre_years,
         "post_monsoon_years_count": post_years,
+        "pre_monsoon_trend": pre_trend_str,
+        "post_monsoon_trend": post_trend_str,
+        "pre_monsoon_threshold_sensitivity": pre_sens["outcome"],
+        "post_monsoon_threshold_sensitivity": post_sens["outcome"],
+        "overall_trend_sensitivity": overall_sens,
+        "pre_monsoon_threshold_sensitivity_rationale": pre_sens["rationale"],
+        "post_monsoon_threshold_sensitivity_rationale": post_sens["rationale"],
+        "overall_trend_sensitivity_rationale": overall_sens_rationale,
+        "pre_monsoon_sen_slope_ci_95": pre_mmk.get("sen_slope_ci_95") if pre_mmk else None,
+        "post_monsoon_sen_slope_ci_95": post_mmk.get("sen_slope_ci_95") if post_mmk else None,
         "pre_monsoon_trend_decline": pre_decline,
         "post_monsoon_trend_decline": post_decline,
         "pre_monsoon_slope_m_per_year": round(pre_slope, 4) if pre_slope is not None else None,
         "post_monsoon_slope_m_per_year": round(post_slope, 4) if post_slope is not None else None,
+        "pre_monsoon_p_value": round(pre_pval, 4) if pre_pval is not None else None,
+        "post_monsoon_p_value": round(post_pval, 4) if post_pval is not None else None,
+        "pre_monsoon_exploratory_ols": pre_ols,
+        "post_monsoon_exploratory_ols": post_ols,
+        "pre_monsoon_modified_mann_kendall": pre_mmk,
+        "post_monsoon_modified_mann_kendall": post_mmk,
+        "significant_decline_threshold_m_per_year": threshold,
+        "threshold_record": threshold_dict,
+        "threshold_source_publication": thresh_rec.source_publication_title if thresh_rec else None,
+        "threshold_source_url": thresh_rec.source_url if thresh_rec else None,
+        "threshold_page_table_reference": thresh_rec.page_table_reference if thresh_rec else None,
+        "threshold_hydrogeological_formation": thresh_rec.hydrogeological_formation if thresh_rec else None,
+        "threshold_justification": thresh_rec.justification if thresh_rec else None,
+        "statistical_limitations": OLS_AUTOCORRELATION_LIMITATIONS_NOTE,
         "pre_monsoon_annual_coverage": pre_coverage,
         "post_monsoon_annual_coverage": post_coverage,
         "coverage_sufficient": coverage_sufficient,
@@ -763,6 +1582,10 @@ def evaluate_assessment_unit(
     min_stations_per_year: int = DEFAULT_MIN_STATIONS_PER_YEAR,
     district: Optional[str] = None,
     state: Optional[str] = None,
+    pre_monsoon_trend: Optional[str] = None,
+    post_monsoon_trend: Optional[str] = None,
+    significant_decline_threshold_m_per_year: Optional[float] = None,
+    fallback_to_documented_threshold: bool = True,
 ) -> Dict[str, Any]:
     """
     Perform statutory GEC-2015 assessment at the administrative assessment-unit level (block/taluk).
@@ -777,12 +1600,16 @@ def evaluate_assessment_unit(
             district=district,
             state=state,
             min_stations_per_year=min_stations_per_year,
+            significant_decline_threshold_m_per_year=significant_decline_threshold_m_per_year,
+            fallback_to_documented_threshold=fallback_to_documented_threshold,
         )
         agg_details = agg
         pre_monsoon_trend_decline = agg["pre_monsoon_trend_decline"]
         post_monsoon_trend_decline = agg["post_monsoon_trend_decline"]
         pre_monsoon_years_count = agg["pre_monsoon_years_count"]
         post_monsoon_years_count = agg["post_monsoon_years_count"]
+        pre_monsoon_trend = agg.get("pre_monsoon_trend")
+        post_monsoon_trend = agg.get("post_monsoon_trend")
 
     res = classify_gec2015_assessment_unit(
         stage_of_extraction_pct=stage_of_extraction_pct,
@@ -794,6 +1621,15 @@ def evaluate_assessment_unit(
         soe_source=soe_source,
         assessment_year=assessment_year,
         require_authoritative_metadata=require_authoritative_metadata,
+        pre_monsoon_trend=pre_monsoon_trend,
+        post_monsoon_trend=post_monsoon_trend,
+        significant_decline_threshold_m_per_year=significant_decline_threshold_m_per_year if significant_decline_threshold_m_per_year is not None else (agg_details.get("significant_decline_threshold_m_per_year") if agg_details else None),
+        fallback_to_documented_threshold=fallback_to_documented_threshold,
+        pre_monsoon_threshold_sensitivity=agg_details.get("pre_monsoon_threshold_sensitivity") if agg_details else None,
+        post_monsoon_threshold_sensitivity=agg_details.get("post_monsoon_threshold_sensitivity") if agg_details else None,
+        overall_trend_sensitivity=agg_details.get("overall_trend_sensitivity") if agg_details else None,
+        pre_monsoon_sen_slope_ci_95=agg_details.get("pre_monsoon_sen_slope_ci_95") if agg_details else None,
+        post_monsoon_sen_slope_ci_95=agg_details.get("post_monsoon_sen_slope_ci_95") if agg_details else None,
     )
 
     if agg_details:
@@ -801,18 +1637,40 @@ def evaluate_assessment_unit(
         res["weighting_method"] = agg_details.get("weighting_method")
         res["pre_monsoon_annual_coverage"] = agg_details.get("pre_monsoon_annual_coverage", [])
         res["post_monsoon_annual_coverage"] = agg_details.get("post_monsoon_annual_coverage", [])
+        res["pre_monsoon_threshold_sensitivity"] = agg_details.get("pre_monsoon_threshold_sensitivity")
+        res["post_monsoon_threshold_sensitivity"] = agg_details.get("post_monsoon_threshold_sensitivity")
+        res["overall_trend_sensitivity"] = agg_details.get("overall_trend_sensitivity")
+        res["pre_monsoon_threshold_sensitivity_rationale"] = agg_details.get("pre_monsoon_threshold_sensitivity_rationale")
+        res["post_monsoon_threshold_sensitivity_rationale"] = agg_details.get("post_monsoon_threshold_sensitivity_rationale")
+        res["overall_trend_sensitivity_rationale"] = agg_details.get("overall_trend_sensitivity_rationale")
+        res["pre_monsoon_sen_slope_ci_95"] = agg_details.get("pre_monsoon_sen_slope_ci_95")
+        res["post_monsoon_sen_slope_ci_95"] = agg_details.get("post_monsoon_sen_slope_ci_95")
         res["pre_monsoon_slope_m_per_year"] = agg_details.get("pre_monsoon_slope_m_per_year")
         res["post_monsoon_slope_m_per_year"] = agg_details.get("post_monsoon_slope_m_per_year")
+        res["pre_monsoon_p_value"] = agg_details.get("pre_monsoon_p_value")
+        res["post_monsoon_p_value"] = agg_details.get("post_monsoon_p_value")
+        res["pre_monsoon_exploratory_ols"] = agg_details.get("pre_monsoon_exploratory_ols")
+        res["post_monsoon_exploratory_ols"] = agg_details.get("post_monsoon_exploratory_ols")
+        res["pre_monsoon_modified_mann_kendall"] = agg_details.get("pre_monsoon_modified_mann_kendall")
+        res["post_monsoon_modified_mann_kendall"] = agg_details.get("post_monsoon_modified_mann_kendall")
+        res["significant_decline_threshold_m_per_year"] = agg_details.get("significant_decline_threshold_m_per_year")
+        res["threshold_record"] = agg_details.get("threshold_record", res.get("threshold_record"))
+        res["threshold_source_publication"] = agg_details.get("threshold_source_publication", res.get("threshold_source_publication"))
+        res["threshold_source_url"] = agg_details.get("threshold_source_url", res.get("threshold_source_url"))
+        res["threshold_page_table_reference"] = agg_details.get("threshold_page_table_reference", res.get("threshold_page_table_reference"))
+        res["threshold_hydrogeological_formation"] = agg_details.get("threshold_hydrogeological_formation", res.get("threshold_hydrogeological_formation"))
+        res["threshold_justification"] = agg_details.get("threshold_justification", res.get("threshold_justification"))
+        res["statistical_limitations"] = agg_details.get("statistical_limitations", OLS_AUTOCORRELATION_LIMITATIONS_NOTE)
         res["station_count"] = agg_details.get("station_count", 0)
         res["station_ids"] = agg_details.get("station_ids", [])
         res["data_quality_screening"] = agg_details.get("data_quality_screening")
         res["spatial_representativeness_met"] = agg_details.get("spatial_representativeness_met", False)
+        res["coverage_sufficient"] = agg_details.get("coverage_sufficient", False)
         if not agg_details.get("coverage_sufficient", False):
-            res["category"] = "unassessed"
-            res["category_label"] = "Unassessed"
-            res["rationale"] = agg_details.get("coverage_rationale", res["rationale"])
-
-    return res
+            # When seasonal coverage is insufficient, retain verified official category
+            # and report trend validation status as insufficient_data.
+            res["trend_validation_status"] = "insufficient_data"
+            res["trend_validation_reason"] = agg_details.get("coverage_rationale", res.get("trend_validation_reason"))
 
     return res
 

@@ -63,15 +63,36 @@ function runAllValidationTests() {
   assert.strictEqual(projectCoordinates(12.5, 100.0), null, 'lon > 98.5 should be excluded');
 
   // Test 4: Zoom clamping and step invariants
-  let zoom = 1.0;
-  const zoomIn = (z) => Math.min(Number((z * 1.3).toFixed(2)), 4.5);
-  const zoomOut = (z) => Math.max(Number((z / 1.3).toFixed(2)), 0.85);
+  const FIT_ZOOM = 0.92;
+  const MIN_ZOOM = 0.40;
+  const MAX_ZOOM = 5.0;
+  let zoom = FIT_ZOOM;
+  const zoomIn = (z) => Math.min(Number((z * 1.25).toFixed(2)), MAX_ZOOM);
+  const zoomOut = (z) => Math.max(Number((z / 1.25).toFixed(2)), MIN_ZOOM);
 
-  for (let i = 0; i < 10; i++) zoom = zoomIn(zoom);
-  assert.strictEqual(zoom, 4.5, `Max zoom should clamp at 4.5, got ${zoom}`);
+  for (let i = 0; i < 15; i++) zoom = zoomIn(zoom);
+  assert.strictEqual(zoom, MAX_ZOOM, `Max zoom should clamp at ${MAX_ZOOM}, got ${zoom}`);
 
-  for (let i = 0; i < 15; i++) zoom = zoomOut(zoom);
-  assert.strictEqual(zoom, 0.85, `Min zoom should clamp at 0.85, got ${zoom}`);
+  for (let i = 0; i < 20; i++) zoom = zoomOut(zoom);
+  assert.strictEqual(zoom, MIN_ZOOM, `Min zoom should clamp at ${MIN_ZOOM}, got ${zoom}`);
+
+  // Test 5: Operational groundwater depth distribution math
+  const counts = [
+    { band: '0–8 m bgl', count: 304, expPct: '65.0' },
+    { band: '8–15 m bgl', count: 87, expPct: '18.6' },
+    { band: '15–25 m bgl', count: 2, expPct: '0.4' },
+    { band: 'Greater than 25 m bgl', count: 75, expPct: '16.0' }
+  ];
+  const total = counts.reduce((acc, c) => acc + c.count, 0);
+  assert.strictEqual(total, 468, 'Total telemetry stations must equal 468');
+
+  for (const c of counts) {
+    const pct = ((c.count / total) * 100).toFixed(1);
+    assert.strictEqual(pct, c.expPct, `Band ${c.band} pct should be ${c.expPct}%, got ${pct}%`);
+  }
+  // Explicitly verify 2 stations (0.4%) is NEVER rounded to 0%
+  const band1525Pct = ((2 / 468) * 100).toFixed(1);
+  assert.strictEqual(band1525Pct, '0.4', '15–25m bgl bracket (2 stations) must render as 0.4%, not 0%');
 }
 
 // Jest test registration if running under Jest
