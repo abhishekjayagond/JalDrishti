@@ -4,8 +4,7 @@
 *Central Ground Water Board (CGWB) Problem Statement #25068*
 
 **Author:** Abhishek Jayagond  
-**Repository:** https://github.com/abhishekjayagond/JalDrishti  
-**Documentation:** [Technical Defense Guide (PROJECT_DEFENSE_GUIDE.md)](./PROJECT_DEFENSE_GUIDE.md) | [Viva Defense Question Bank (VIVA_QUESTIONS_AND_ANSWERS.md)](./VIVA_QUESTIONS_AND_ANSWERS.md)
+**Repository:** https://github.com/abhishekjayagond/JalDrishti
 
 ---
 
@@ -16,16 +15,6 @@ JalDrishti is a groundwater monitoring and forecasting platform built for Centra
 In India, groundwater accounts for roughly 63% of net irrigated agriculture and 85% of rural drinking water supplies. In many agricultural regions, pumping heavily outpaces seasonal monsoon recharge, causing steady water table depletion. Under the National Hydrology Project, the CGWB has deployed over 5,260 automated DWLR stations across the country. While this network provides regular water-level observations, turning raw sensor readings into practical guidance requires reliable data pipelines, statutory accounting, and interpretable forecasting models.
 
 JalDrishti was built to address these challenges. It currently runs on a verified baseline of 390 long-term Karnataka CGWB observation wells (covering 32 years of pre-monsoon records from 1994 to 2025; 28,544 validated station-years) along with 78 nationwide benchmark stations across 26 states for interface continuity.
-
----
-
-## Detailed Technical Documentation
-
-For project evaluation, academic defense, and viva preparation, detailed technical references are available in the repository:
-
-- [PROJECT_DEFENSE_GUIDE.md](./PROJECT_DEFENSE_GUIDE.md): A comprehensive 15-section reference covering national groundwater context, problem motivation, system architecture, database design, machine learning model selection, conformal calibration, and native Windows operational choices.
-- [VIVA_QUESTIONS_AND_ANSWERS.md](./VIVA_QUESTIONS_AND_ANSWERS.md): 105 detailed questions and answers across 24 technical categories, including common viva traps and specific questions on GEC-2015 classifications, temporal data splits, and model choices.
-- [LOCAL_SETUP.md](./LOCAL_SETUP.md): Step-by-step instructions for running the stack locally on native Windows.
 
 ---
 
@@ -129,23 +118,14 @@ flowchart TD
 
 ---
 
-## Technology Stack & Native Windows Setup
+## Technology Stack
 
-### Technology Choices
 - **Frontend:** React 18 with custom semantic HTML, CSS modules, and custom SVG charts. (Using native SVG allowed inverting the depth axis so deeper water levels physically move downwards, matching real-world intuition.)
 - **Backend APIs:** Python 3.10+, FastAPI, Uvicorn, SQLAlchemy ORM, and Pydantic validation.
 - **Database:** PostgreSQL 15 with TimescaleDB time-series extension (partitioned into 7-day chunks for efficient telemetry queries).
-- **Cache Service:** Redis (configured in environment, ready for horizontal scaling).
+- **Cache Service:** Redis (configured via `REDIS_URL`, provisioned for scaling).
 - **Machine Learning:** Scikit-Learn, NumPy, SciPy, Joblib.
 - **Process Orchestration:** PowerShell launch scripts (`start-jaldrishti.ps1`, `stop-jaldrishti.ps1`).
-
-### Why Native Windows Instead of Docker?
-JalDrishti was configured to run directly on native Windows for practical development and evaluation reasons:
-1. **No Virtualization Overhead:** Avoids requiring Docker Desktop, Hyper-V, or WSL2 Linux virtual machines, allowing the stack to run smoothly on standard student laptops.
-2. **Direct Process Control:** A single PowerShell script manages the local Python virtual environment (`.venv`), Node.js, and portable binaries in `.local_services/`.
-3. **Straightforward Debugging:** Python code can be stepped through directly in VS Code without setting up container debugging attachments.
-4. **Offline Operation:** The entire project runs completely offline during university evaluations without pulling external images from Docker Hub.
-5. **Redis Role in Code:** Redis is started locally on port 6379 and configured via `REDIS_URL`. Current API routes query PostgreSQL/TimescaleDB directly through SQLAlchemy; Redis is provisioned in the architecture as a dedicated caching service for future high-traffic scaling.
 
 ---
 
@@ -156,7 +136,7 @@ JalDrishti was configured to run directly on native Windows for practical develo
 - Python 3.10 or 3.11 installed and added to PATH
 - Node.js 18.x or 20.x LTS with npm
 - Git for Windows
-- Local PostgreSQL 15 and Redis binaries placed in `.local_services/` (see [LOCAL_SETUP.md](./LOCAL_SETUP.md))
+- Local PostgreSQL 15 and Redis binaries placed in `.local_services/`
 
 ### Starting the Application
 Open a PowerShell terminal in the repository root and run:
